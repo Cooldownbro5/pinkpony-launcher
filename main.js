@@ -674,7 +674,11 @@ async function refreshAccountStrict(acc) {
 ipcMain.handle('saved-account', async () => {
   const acc = loadAccount();
   if (!acc) return null;
-  return publicAccount(await refreshAccount(acc));
+  const fresh = await refreshAccount(acc);
+  // Link it in the background - a fresh token is exactly what that needs,
+  // and the home page must not wait on Mojang to draw.
+  linkAccount(fresh).catch(() => {});
+  return publicAccount(fresh);
 });
 
 /**
@@ -1213,6 +1217,101 @@ ipcMain.handle('cosmetics', async (_e, action, kind, value) => {
  * anything else. These are recorded as they happen - a launch, an install, a
  * sign-in - and there are no others, so an empty list stays empty.
  */
+// ---- linking Minecraft accounts to the code -------------------------------
+/*
+ * Every Minecraft account you play on with your code shares one wardrobe:
+ * buy a cape on one and it is on all of them, equip it on one and they all
+ * wear it. The sharing itself is done by the database (linked_accounts and
+ * the pp_* triggers); all the launcher does is prove each account is yours.
+ *
+ * THE PROOF IS MINECRAFT'S OWN SERVER LOGIN. The `link` function hands out a
+ * one-off server id, the launcher tells Mojang "this account is joining a
+ * server with that id" using the account's own session, and the function asks
+ * Mojang whether that really happened. The session token goes to Mojang and
+ * nowhere else - never to us. A name that is merely typed or claimed cannot
+ * pass, so nobody can link somebody else's account and dress them up.
+ *
+ * Needs the hwid, so the first link happens after the game has run once on
+ * this PC (see readHwid). Re-checked every twelve hours per account, which
+ * also picks up a changed Minecraft name.
+ */
+const LINKS = path.join(app.getPath('userData'), 'linked.json');
+const RELINK_MS = 12 * 3600 * 1000;
+
+function readLinks() {
+  try { return JSON.parse(fs.readFileSync(LINKS, 'utf8')) || {}; } catch { return {}; }
+}
+function writeLinks(links) {
+  try { fs.writeFileSync(LINKS, JSON.stringify(links)); } catch { /* retried next time */ }
+}
+
+let linking = null;
+
+function linkAccount(acc, { force = false } = {}) {
+  if (linking) return linking;
+  linking = (async () => {
+    const settings = readSettings();
+    if (!settings.code || !acc?.uuid || !acc?.name) return { ok: false, reason: 'not_ready' };
+    const hwid = readHwid(settings);
+    if (!hwid) return { ok: false, reason: 'no_hwid' };
+
+    // Keyed on a fingerprint of the code too, so a new code links afresh.
+    // Never the code itself - this file is not encrypted.
+    const key = crypto.createHash('sha256').update(settings.code).digest('hex').slice(0, 12)
+              + ':' + acc.uuid;
+    const links = readLinks();
+    if (!force && links[key] && Date.now() - links[key] < RELINK_MS) return { ok: true, cached: true };
+
+    const post = (body) => fetch(`${SB_URL}/functions/v1/link`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', apikey: SB_KEY,
+                 Authorization: 'Bearer ' + SB_KEY },
+      body: JSON.stringify(body)
+    }).then((r) => r.json());
+
+    const start = await post({ action: 'start', code: settings.code, hwid });
+    if (!start?.ok || !start.server_id) return start || { ok: false, reason: 'no_answer' };
+
+    const join = (a) => fetch('https://sessionserver.mojang.com/session/minecraft/join', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        accessToken: a.token?.access_token,
+        selectedProfile: String(a.uuid).replace(/-/g, ''),
+        serverId: start.server_id
+      })
+    });
+
+    let who = acc;
+    let res = await join(who);
+    if (res.status === 401 || res.status === 403) {
+      // A stale session. One refresh, then give up quietly until next time.
+      who = await refreshAccountStrict(acc).catch(() => null);
+      if (!who) return { ok: false, reason: 'session_expired' };
+      res = await join(who);
+    }
+    if (res.status !== 204 && !res.ok) return { ok: false, reason: 'mojang_' + res.status };
+
+    const done = await post({ action: 'finish', code: settings.code, hwid,
+                              name: who.name, server_id: start.server_id });
+    if (done?.ok) {
+      const first = !links[key];
+      links[key] = Date.now();
+      writeLinks(links);
+      if (first) {
+        addEvent('cos', `Linked ${done.name} to your code`,
+                 (done.linked || []).length > 1
+                   ? 'Cosmetics now shared with ' + done.linked.filter((n) => n !== done.name).join(', ')
+                   : 'Your cosmetics follow every account you link');
+      }
+    }
+    return done;
+  })()
+    .catch((e) => ({ ok: false, reason: String(e?.message || e) }))
+    .finally(() => { linking = null; });
+  return linking;
+}
+
 const HISTORY = path.join(app.getPath('userData'), 'history.json');
 const HISTORY_MAX = 40;
 
@@ -1716,6 +1815,8 @@ async function handleBridge(req, res, key) {
     if (bridgeGameDir) writeAccountsFile(bridgeGameDir);
     if (win && !win.isDestroyed()) win.webContents.send('accounts-changed');
     addEvent('join', `Switched to ${fresh.name}`, 'in game, no restart');
+    // An in-game switch never goes through launchGame, so link here too.
+    linkAccount(fresh).catch(() => {});
     return reply(res, 200, {
       ok: true, name: fresh.name, uuid: fresh.uuid, token: t.access_token,
       xuid: String(t.meta?.xuid || ''), clientId: String(t.client_token || '')
@@ -1811,6 +1912,9 @@ async function launchGame(opts) {
   });
   launcher.on('close', (code) => {
     gameRunning = false;
+    // The game has now run at least once, so the hwid exists - the first
+    // chance a brand new install has to link this account.
+    linkAccount(loadAccount()).catch(() => {});
     removeBridgeFile(gameDir);
     if (bridgeGameDir === gameDir) bridgeGameDir = null;
     // Asked to come back as somebody else? Do that before anything else - the
@@ -1828,6 +1932,8 @@ async function launchGame(opts) {
     say(100, code === 0 ? 'Closed' : `Game exited (${code})`, { done: true });
     if (win && !win.isDestroyed() && settings.closeOnLaunch) win.show();
   });
+
+  linkAccount(account).catch(() => {});
 
   gameRunning = true;
   let child;
