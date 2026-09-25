@@ -1,0 +1,383 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Pink Pony Client</title>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+
+<header class="top">
+  <div class="logo">
+    <span class="mark"></span>
+    <span class="logotext"><b>PINK PONY</b><i>CLIENT</i></span>
+  </div>
+  <span class="chip live"><i></i>ONLINE</span>
+  <div class="grow"></div>
+  <button class="acct" id="acct">
+    <span class="face" id="acctFace"></span>
+    <span class="who">
+      <b id="acctName">Sign in <svg class="crown" viewBox="0 0 24 24"><path d="M4 18l-1-9 5 4 4-7 4 7 5-4-1 9z"/></svg></b>
+      <i id="acctTier">Not connected</i>
+    </span>
+  </button>
+  <div class="accmenu" id="accMenu" hidden>
+    <p class="accmenuhead">ACCOUNTS</p>
+    <div id="accList"></div>
+    <button class="accadd" id="accAdd">
+      <svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg>Add account
+    </button>
+  </div>
+
+  <div class="notifmenu" id="notifMenu" hidden>
+    <p class="accmenuhead">NOTIFICATIONS</p>
+    <div id="notifList"></div>
+  </div>
+
+  <span class="vline"></span>
+  <button class="ico" id="friendsBtn" title="Friends"><svg viewBox="0 0 24 24"><circle cx="9" cy="8" r="3"/><circle cx="17" cy="9" r="2.4"/><path d="M3 20a6 6 0 0 1 12 0M15 20a5 5 0 0 1 6-4"/></svg></button>
+  <button class="ico" id="bell" title="Notifications"><svg viewBox="0 0 24 24"><path d="M18 16v-5a6 6 0 1 0-12 0v5l-2 2h16z"/><path d="M10 21h4"/></svg></button>
+  <button class="ico" title="Settings"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.6 1.6 0 0 0 .3 1.8 2 2 0 1 1-2.8 2.8 1.6 1.6 0 0 0-1.8-.3 1.6 1.6 0 0 0-1 1.5 2 2 0 1 1-4 0 1.6 1.6 0 0 0-1-1.5 1.6 1.6 0 0 0-1.8.3 2 2 0 1 1-2.8-2.8 1.6 1.6 0 0 0 .3-1.8 1.6 1.6 0 0 0-1.5-1 2 2 0 1 1 0-4 1.6 1.6 0 0 0 1.5-1 1.6 1.6 0 0 0-.3-1.8 2 2 0 1 1 2.8-2.8 1.6 1.6 0 0 0 1.8.3 1.6 1.6 0 0 0 1-1.5 2 2 0 1 1 4 0 1.6 1.6 0 0 0 1 1.5 1.6 1.6 0 0 0 1.8-.3 2 2 0 1 1 2.8 2.8 1.6 1.6 0 0 0-.3 1.8 1.6 1.6 0 0 0 1.5 1 2 2 0 1 1 0 4 1.6 1.6 0 0 0-1.5 1z"/></svg></button>
+  <div class="wbtns">
+    <button data-win="min">&#8211;</button><button data-win="max">&#9723;</button>
+    <button data-win="close" class="x">&times;</button>
+  </div>
+</header>
+
+<div class="shell">
+
+  <nav class="side">
+    <button class="nav on" data-page="home"><svg viewBox="0 0 24 24"><path d="M3 11l9-8 9 8"/><path d="M5 10v10h14V10"/></svg>HOME</button>
+    <button class="nav" data-page="profiles"><svg viewBox="0 0 24 24"><path d="M4 7l8-4 8 4-8 4z"/><path d="M4 12l8 4 8-4"/><path d="M4 17l8 4 8-4"/></svg>PROFILES</button>
+    <button class="nav" data-page="mods"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M12 4v3M12 17v3M4 12h3M17 12h3M6.5 6.5l2 2M15.5 15.5l2 2M17.5 6.5l-2 2M8.5 15.5l-2 2"/></svg>MODULES</button>
+    <button class="nav" data-page="cosmetics"><svg viewBox="0 0 24 24"><path d="M8 4l4 2 4-2 4 3-3 3v10H7V10L4 7z"/></svg>COSMETICS</button>
+    <button class="nav" data-page="servers"><svg viewBox="0 0 24 24"><ellipse cx="12" cy="6" rx="8" ry="3"/><path d="M4 6v6c0 1.7 3.6 3 8 3s8-1.3 8-3V6"/><path d="M4 12v6c0 1.7 3.6 3 8 3s8-1.3 8-3v-6"/></svg>SERVERS</button>
+    
+    <button class="nav" data-page="settings"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.6 1.6 0 0 0 .3 1.8 2 2 0 1 1-2.8 2.8 1.6 1.6 0 0 0-1.8-.3 1.6 1.6 0 0 0-1 1.5 2 2 0 1 1-4 0 1.6 1.6 0 0 0-1-1.5 1.6 1.6 0 0 0-1.8.3 2 2 0 1 1-2.8-2.8 1.6 1.6 0 0 0 .3-1.8 1.6 1.6 0 0 0-1.5-1 2 2 0 1 1 0-4 1.6 1.6 0 0 0 1.5-1 1.6 1.6 0 0 0-.3-1.8 2 2 0 1 1 2.8-2.8 1.6 1.6 0 0 0 1.8.3 1.6 1.6 0 0 0 1-1.5 2 2 0 1 1 4 0 1.6 1.6 0 0 0 1 1.5 1.6 1.6 0 0 0 1.8-.3 2 2 0 1 1 2.8 2.8 1.6 1.6 0 0 0-.3 1.8 1.6 1.6 0 0 0 1.5 1 2 2 0 1 1 0 4 1.6 1.6 0 0 0-1.5 1z"/></svg>SETTINGS</button>
+
+    <div class="grow"></div>
+
+    <div class="plus">
+      <div class="plushead">
+        <span class="gem"><svg viewBox="0 0 24 24"><path d="M6 3h12l4 6-10 12L2 9z"/><path d="M2 9h20M12 9v12"/></svg></span><b>PREMIUM</b>
+      </div>
+      <p>The client, every mod and the Premium tags. $5 a month.</p>
+      <button class="up">GET PREMIUM</button>
+    </div>
+
+    <div class="socials">
+      <a href="#" data-discord title="Discord"><svg viewBox="0 0 24 24"><path d="M8 6a12 12 0 0 1 8 0l1 2a13 13 0 0 1 2 8 15 15 0 0 1-4 2l-1-2a10 10 0 0 0 1-1 12 12 0 0 1-6 0 10 10 0 0 0 1 1l-1 2a15 15 0 0 1-4-2 13 13 0 0 1 2-8z"/><circle cx="9.5" cy="13" r="1.1"/><circle cx="14.5" cy="13" r="1.1"/></svg></a>
+      <a href="#" title="X"><svg viewBox="0 0 24 24"><path d="M4 4l16 16M20 4L4 20"/></svg></a>
+      <a href="#" title="YouTube"><svg viewBox="0 0 24 24"><rect x="2" y="6" width="20" height="12" rx="4"/><path d="M10 9.5l5 2.5-5 2.5z"/></svg></a>
+      <a href="#" title="TikTok"><svg viewBox="0 0 24 24"><path d="M14 4v9a4 4 0 1 1-3-3.9"/><path d="M14 6a5 5 0 0 0 5 4"/></svg></a>
+    </div>
+    <p class="sidever" id="sideVer">v1.21.1</p>
+  </nav>
+
+  <main class="main">
+    <section class="page on" data-page="home">
+
+      <!-- ================= hero ================= -->
+      <div class="hero">
+        <div class="heroart"></div>
+        <span class="ready"><i></i>READY TO PLAY</span>
+
+        <div class="heroin">
+          <p class="eyebrow">PINK PONY CLIENT</p>
+          <div class="wordmark" role="img" aria-label="Pink Pony"></div>
+          <p class="tagline">Built different. &nbsp;Play better.</p>
+
+          <div class="cta">
+            <button class="launch" id="play">
+              <svg viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>LAUNCH
+            </button>
+          </div>
+
+          <div class="verrow">
+            <button class="verbox" id="verBox">
+              <b id="verNum">1.21.1</b>
+              <i id="profName">Default</i>
+              <svg viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></svg>
+            </button>
+
+            <button class="cog"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.6 1.6 0 0 0 .3 1.8 2 2 0 1 1-2.8 2.8 1.6 1.6 0 0 0-1.8-.3 1.6 1.6 0 0 0-1 1.5 2 2 0 1 1-4 0 1.6 1.6 0 0 0-1-1.5 1.6 1.6 0 0 0-1.8.3 2 2 0 1 1-2.8-2.8 1.6 1.6 0 0 0 .3-1.8 1.6 1.6 0 0 0-1.5-1 2 2 0 1 1 0-4 1.6 1.6 0 0 0 1.5-1 1.6 1.6 0 0 0-.3-1.8 2 2 0 1 1 2.8-2.8 1.6 1.6 0 0 0 1.8.3 1.6 1.6 0 0 0 1-1.5 2 2 0 1 1 4 0 1.6 1.6 0 0 0 1 1.5 1.6 1.6 0 0 0 1.8-.3 2 2 0 1 1 2.8 2.8 1.6 1.6 0 0 0-.3 1.8 1.6 1.6 0 0 0 1.5 1 2 2 0 1 1 0 4 1.6 1.6 0 0 0-1.5 1z"/></svg></button>
+          </div>
+
+          <div class="progress" id="progress" hidden>
+            <span class="track"><i id="bar"></i></span>
+            <span class="ptxt" id="progressText">Preparing…</span>
+          </div>
+        </div>
+
+      </div>
+
+      <!-- ================= three panels ================= -->
+      <div class="trio">
+
+        <div class="panel update">
+          <div class="phead">
+            <h2><i class="bul"></i>LATEST UPDATE</h2>
+            <span class="tagnew">NEW</span><span class="vtag" id="updVer">v1.21.1</span>
+          </div>
+          <!-- Both filled by loadUpdate() from client_builds. Empty here so
+               a slow or failed query shows nothing rather than briefly showing
+               an invented release called "Hoofbeat Update". -->
+          <h3></h3>
+          <ul class="ticks"></ul>
+          <button class="outline">VIEW PATCH NOTES <svg viewBox="0 0 24 24"><path d="M7 17L17 7M9 7h8v8"/></svg></button>
+          <div class="sprayart"></div>
+        </div>
+
+        <div class="panel">
+          <div class="phead"><h2>RECENT ACTIVITY</h2></div>
+          <div class="acts" id="acts"></div>
+          <button class="outline wide">VIEW FULL HISTORY <svg viewBox="0 0 24 24"><path d="M7 17L17 7M9 7h8v8"/></svg></button>
+        </div>
+
+        <div class="panel feat" id="featPanel">
+          <div class="phead"><h2>FEATURED COSMETIC</h2></div>
+          <div class="featart" id="featArt"></div>
+          <!-- Filled by loadFeatured(). Left EMPTY on purpose: these used to
+               read "Neon Wings" / "Epic Back Bling", a cosmetic that has never
+               existed described with a rarity we do not use, and it showed
+               whenever the catalogue had nothing listed to feature. -->
+          <h3 class="featname"></h3>
+          <p class="featsub"></p>
+          <button class="solid">VIEW IN COSMETICS</button>
+        </div>
+      </div>
+
+      <div class="sechead"><h2><i class="bul"></i>FEATURED SERVERS</h2></div>
+      <div class="servers" id="servers"></div>
+    </section>
+
+    <section class="page" data-page="mods">
+      <div class="modtop">
+        <div class="sechead"><h2><i class="bul"></i>MODULES</h2></div>
+        <label class="search">
+          <svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="6"/><path d="M20 20l-4.3-4.3"/></svg>
+          <input id="modSearch" type="text" placeholder="Search modules" spellcheck="false">
+        </label>
+        <span class="modcount" id="modCount"></span>
+      </div>
+      <div class="cats" id="modCats"></div>
+      <div class="mods" id="mods"></div>
+
+    </section>
+    <!-- ============================================================
+         PROFILES.
+
+         A profile is a Minecraft version AND its own mods folder. Those two
+         things are one thing here on purpose: the whole reason profiles exist
+         is that a 1.21.1 jar in a 1.20 folder is a crash, and a screen that
+         let you pick a version on one page and manage mods on another would
+         hide exactly the connection it needs to teach.
+         ============================================================ -->
+    <section class="page" data-page="profiles">
+      <div class="sechead"><h2><i class="bul"></i>PROFILES</h2></div>
+      <p class="setnote dim">Each version keeps its own mods, config and worlds. Pick one to play it.</p>
+      <div class="vergrid" id="verGrid"></div>
+      <div class="verpicks" id="verPicks" hidden></div>
+
+      <div class="sechead mt"><h2><i class="bul"></i>MODS IN <span id="modsFor">DEFAULT</span></h2>
+        <span class="grow"></span>
+        <button class="ghost" id="modsFolder">Open folder</button>
+        <button class="ghost" id="modsRescan">Rescan</button>
+      </div>
+      <p class="setnote dim" id="modsHint">Drop a jar from Modrinth or CurseForge into the folder and rescan.</p>
+      <div class="srvlist" id="jarList"></div>
+    </section>
+
+    <section class="page" data-page="cosmetics">
+      <div class="modtop">
+        <div class="sechead"><h2><i class="bul"></i>COSMETICS</h2></div>
+        <label class="search">
+          <svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="6"/><path d="M20 20l-4.3-4.3"/></svg>
+          <input id="cosSearch" type="text" placeholder="Search cosmetics" spellcheck="false">
+        </label>
+        <span class="modcount" id="cosCount"></span>
+      </div>
+      <p class="setnote" id="cosPageNote"></p>
+      <div class="cats" id="cosCats"></div>
+      <div class="cosgrid" id="cosGrid"></div>
+    </section>
+
+    <section class="page" data-page="servers">
+      <div class="modtop">
+        <div class="sechead"><h2><i class="bul"></i>SERVERS</h2></div>
+        <button class="ghost" id="srvRefresh">Refresh</button>
+        <span class="modcount" id="srvCount"></span>
+      </div>
+      <div class="srvlist" id="srvList"></div>
+
+    </section>
+
+    
+
+    <section class="page" data-page="settings">
+      <div class="sechead"><h2><i class="bul"></i>SETTINGS</h2></div>
+
+      <div class="setgroup">
+        <h3>GAME</h3>
+
+        <div class="setrow">
+          <div class="setmeta"><b>Memory</b><i>How much RAM the game may use. More is not always faster.</i></div>
+          <div class="setctl">
+            <input id="memRange" class="range" type="range" min="1024" max="16384" step="512">
+            <span class="setval" id="memVal">4 GB</span>
+          </div>
+        </div>
+
+        <div class="setrow">
+          <div class="setmeta"><b>Java</b><i>Leave empty to let the launcher find one.</i></div>
+          <div class="setctl">
+            <span class="pathbox" id="javaPath">Automatic</span>
+            <button class="ghost" data-pick="javaPath">Choose</button>
+            <button class="ghost" data-clear="javaPath">Clear</button>
+          </div>
+        </div>
+
+        <div class="setrow">
+          <div class="setmeta"><b>Game folder</b><i>Pink Pony keeps its own install, away from .minecraft.</i></div>
+          <div class="setctl">
+            <span class="pathbox" id="gameDir">.pinkpony</span>
+            <button class="ghost" data-pick="gameDir">Choose</button>
+            <button class="ghost" data-open="gameDir">Open</button>
+          </div>
+        </div>
+
+        <div class="setrow">
+          <div class="setmeta"><b>Copy from another version</b><i>Servers, video and control settings, and your Pink Pony modules and macros. Worlds and mods stay where they are.</i></div>
+          <div class="setctl">
+            <select id="copyFrom" class="textbox pick"></select>
+            <button class="ghost" id="copyGo">Copy</button>
+          </div>
+        </div>
+      </div>
+
+      <div class="setgroup">
+        <h3>ACCOUNT</h3>
+
+        <div class="setrow">
+          <div class="setmeta"><b>Access code</b><i>The code from <b>/generate</b> in the Discord.</i></div>
+          <div class="setctl">
+            <input id="codeInput" class="textbox" type="password" spellcheck="false"
+                   autocomplete="off" placeholder="XXXX-XXXX-XXXX">
+            <button class="ghost" id="codeShow">Show</button>
+            <button class="ghost" id="codeSave">Save</button>
+          </div>
+        </div>
+      </div>
+
+      <div class="setgroup">
+        <h3>LAUNCHER</h3>
+
+        <div class="setrow">
+          <div class="setmeta"><b>Close on launch</b><i>Hide the launcher once the game starts.</i></div>
+          <div class="setctl"><button class="sw2" id="closeOnLaunch" aria-pressed="false"></button></div>
+        </div>
+
+        <div class="setrow">
+          <div class="setmeta"><b>Keep logs</b><i>Write the game's output to a file. Useful when something breaks.</i></div>
+          <div class="setctl"><button class="sw2" id="keepLogs" aria-pressed="false"></button></div>
+        </div>
+
+        <!-- Filled by app.js from the PACKAGED version, so it cannot disagree
+             with what the updater compares against. Empty here on purpose: a
+             number typed into markup is true on the day it is written and
+             wrong every day after. -->
+        <div class="setrow">
+          <div class="setmeta"><b>Terms of Service</b><i id="termsNote">What you agreed to when you started using Pink Pony.</i></div>
+          <div class="setctl"><button class="ghost" id="termsOpen">Read</button></div>
+        </div>
+
+        <div class="setrow">
+          <div class="setmeta"><b>Version</b><i>Which build of the launcher this is.</i></div>
+          <div class="setctl"><span class="setval" id="appVersion">&mdash;</span></div>
+        </div>
+
+        <!-- The status line is filled by main.js as it checks and downloads,
+             so the row says what is happening rather than sitting there. The
+             restart button only appears once there is something to restart
+             INTO. -->
+        <div class="setrow">
+          <div class="setmeta"><b>Updates</b><i id="updState">Checking for updates&hellip;</i></div>
+          <div class="setctl">
+            <button class="ghost" id="updCheck">Check now</button>
+            <button class="solid small" id="updInstall" hidden>Restart</button>
+          </div>
+        </div>
+      </div>
+
+      <p class="setnote" id="setNote"></p>
+    </section>
+  </main>
+
+  <aside class="rightcol">
+    <div class="rhead"><h2>FRIENDS <em id="friendCount"></em></h2>
+      <button class="ghost tiny" id="friendsRefresh">Refresh</button></div>
+
+    <div class="friends" id="friends"></div>
+
+    <div class="addform friendform">
+      <input id="friendName" class="textbox" type="text" placeholder="Add by username"
+             spellcheck="false" maxlength="16" autocomplete="off">
+      <button class="ghost" id="friendAdd">Add</button>
+    </div>
+    <p class="setnote" id="friendNote"></p>
+
+    <div class="rhead mt"><h2>COSMETICS</h2><a href="#" id="cosViewAll">View All &rsaquo;</a></div>
+    <div class="feature">
+      <div class="fbig" id="featSkin"></div>
+      <div class="finfo">
+        <b>Pony Rider <span class="prem">PREMIUM</span></b>
+        <span>Epic Skin</span>
+        <div class="frow2">
+          <button class="equip">EQUIP</button>
+          <button class="wardrobe"><svg viewBox="0 0 24 24"><path d="M8 4l4 2 4-2 4 3-3 3v10H7V10L4 7z"/></svg></button>
+        </div>
+      </div>
+    </div>
+    <p class="setnote" id="cosNote"></p>
+    <div class="tiles" id="tiles"></div>
+
+    <a class="joinus" href="#" data-discord>
+      <div>
+        <b>PINK PONY DISCORD</b>
+        <span>Codes, updates and help. It is where everything happens.</span>
+      </div>
+      <span class="dsc"><svg viewBox="0 0 24 24"><path d="M8 6a12 12 0 0 1 8 0l1 2a13 13 0 0 1 2 8 15 15 0 0 1-4 2l-1-2a10 10 0 0 0 1-1 12 12 0 0 1-6 0 10 10 0 0 0 1 1l-1 2a15 15 0 0 1-4-2 13 13 0 0 1 2-8z"/><circle cx="9.5" cy="13" r="1.1"/><circle cx="14.5" cy="13" r="1.1"/></svg></span>
+    </a>
+  </aside>
+
+</div>
+
+<!-- Terms of Service: shown once per version of the Terms, before the first
+     launch. main.js refuses to launch until it has been accepted, so this is
+     not only a screen that can be clicked past. -->
+<div class="tosgate" id="tosGate" hidden>
+  <div class="tosbox" role="dialog" aria-modal="true" aria-labelledby="tosTitle">
+    <h2 id="tosTitle"><i class="bul"></i>TERMS OF SERVICE</h2>
+    <p class="toslead">Before you play, the short version of what you are agreeing to:</p>
+    <ul class="toslist">
+      <li>You are <b>16 or older</b>, and 18 (or have a parent's OK) to buy anything.</li>
+      <li>Your access code is <b>yours alone</b> and locked to this computer. Don't share or sell it.</li>
+      <li>Some features are <b>not allowed on every server</b>. Check a server's rules; bans are on you.</li>
+      <li>Your Microsoft sign-in stays <b>on this computer</b>, encrypted. We never see your password.</li>
+      <li>We store your code, Discord ID, Minecraft name, a hardware ID, friends and cosmetics to run Pink Pony. We don't sell data.</li>
+      <li>Premium is $5 a month and <b>never auto-charges</b>. It stops when the month runs out.</li>
+    </ul>
+    <p class="tosfine">Pink Pony is not an official Minecraft product and is not approved by or associated with Mojang or Microsoft.</p>
+    <div class="tosbtns">
+      <button class="ghost" id="tosRead">Read the full Terms</button>
+      <span class="grow"></span>
+      <button class="ghost" id="tosQuit">Quit</button>
+      <button class="tosok" id="tosAgree">I agree</button>
+    </div>
+  </div>
+</div>
+
+<script src="app.js"></script>
+</body>
+</html>

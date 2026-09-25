@@ -1,0 +1,49 @@
+# Builds the launcher on GitHub's own Windows machine and publishes it to
+# Cooldownbro5/pinkpony-launcher-releases, exactly like `npm run release`.
+#
+# WHY THIS EXISTS: Smart App Control on the owner's PC blocks the unsigned
+# helper exe electron-builder has to run while making the installer
+# (Code Integrity event 3077 on dist\PinkPony-Setup.exe, 25 Sep 2026).
+# GitHub's runners have no such policy.
+#
+# Run it:  gh workflow run release.yml --repo Cooldownbro5/pinkpony-launcher
+# Needs the repo secret RELEASES_TOKEN - a token that can write releases on
+# pinkpony-launcher-releases. The built-in GITHUB_TOKEN cannot, because that
+# is a different repo.
+name: release
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install
+        run: npm ci
+
+      - name: Build and publish
+        run: npx electron-builder --win --publish always
+        env:
+          GH_TOKEN: ${{ secrets.RELEASES_TOKEN }}
+
+      # A copy on the run page too, so a failed publish still leaves the
+      # installer somewhere you can grab it.
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: PinkPony-Setup
+          path: |
+            dist/PinkPony-Setup.exe
+            dist/latest.yml
+          if-no-files-found: ignore

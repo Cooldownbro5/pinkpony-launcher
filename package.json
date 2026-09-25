@@ -1,0 +1,68 @@
+{
+  "name": "pinkpony-launcher",
+  "version": "1.2.3",
+  "description": "Pink Pony launcher",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron .",
+    "dist": "electron-builder --win --publish never",
+    "release": "electron-builder --win --publish always"
+  },
+  "author": "Cooldownbro",
+  "license": "UNLICENSED",
+  "devDependencies": {
+    "electron": "^32.0.0",
+    "electron-builder": "^25.0.0"
+  },
+  "dependencies": {
+    "msmc": "^4.1.0",
+    "minecraft-launcher-core": "^3.17.0",
+    "electron-updater": "^6.3.9"
+  },
+  "build": {
+    "appId": "com.pinkpony.launcher",
+    "productName": "Pink Pony",
+    "directories": {
+      "output": "dist",
+      "buildResources": "build"
+    },
+    "files": [
+      "main.js",
+      "preload.js",
+      "renderer/**/*",
+      "!**/*.map",
+      "!**/node_modules/*/{test,__tests__,doc,docs,example,examples}/**"
+    ],
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "icon": "build/icon.ico",
+      "artifactName": "PinkPony-Setup.${ext}"
+    },
+    "nsis": {
+      "oneClick": true,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": false,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "Pink Pony",
+      "installerIcon": "build/icon.ico",
+      "uninstallerIcon": "build/icon.ico",
+      "deleteAppDataOnUninstall": false
+    },
+    "publish": [
+      {
+        "provider": "github",
+        "owner": "Cooldownbro5",
+        "repo": "pinkpony-launcher-releases",
+        "releaseType": "release"
+      }
+    ]
+  }
+}

@@ -1,0 +1,724 @@
+/* Pink Pony launcher.
+   Palette and type match pinkponyclient.com, so the launcher and the site read
+   as one product rather than two things made by the same person. */
+:root{
+  --void:#08060C; --panel:#100D16; --panel2:#161220; --raise:#1B1626;
+  --line:#221C2E; --line2:#312942;
+  --pink:#FF3FA8; --pinkhi:#FF7BC8; --deep:#C4197E;
+  --bone:#F4F1F7; --ash:#9C95AA; --dim:#6C6579;
+  --good:#3ED47F; --gold:#FFC83D;
+  --d:'Space Grotesk',system-ui,sans-serif;
+  --m:'JetBrains Mono',ui-monospace,monospace;
+}
+*{box-sizing:border-box}
+/* display:flex/grid on a class beats the browser's own [hidden] rule, so the
+   progress bar would sit there visible with hidden="" set. Say it once here. */
+[hidden]{display:none!important}
+html,body{height:100%}
+body{
+  margin:0;background:var(--void);color:var(--bone);font-family:var(--d);
+  line-height:1.5;overflow:hidden;user-select:none;-webkit-font-smoothing:antialiased;
+}
+button{font-family:inherit;cursor:pointer;border:0;background:none;color:inherit}
+a{color:inherit;text-decoration:none}
+svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:1.7;
+    stroke-linecap:round;stroke-linejoin:round;flex:none}
+.grow{flex:1}
+
+/* ================= top bar ================= */
+.top{height:78px;display:flex;align-items:center;gap:11px;padding:0 0 0 22px;
+     -webkit-app-region:drag}
+.logo{display:flex;align-items:center;gap:12px;margin-right:6px}
+/* The real pony, cut out of the artwork. No gradient tile behind it - the
+   art carries its own glow and a plate under it just makes a badge. */
+.mark{width:42px;height:42px;flex:none;
+  background:url('img/logo.png') center/contain no-repeat;
+  filter:drop-shadow(0 4px 14px #FF3FA85C)}
+.logotext{display:grid;line-height:1.04}
+.logotext b{font-size:18px;letter-spacing:1.7px;font-weight:700}
+.logotext i{font-style:normal;font-size:10px;letter-spacing:3.4px;color:var(--dim)}
+
+.chip{display:inline-flex;align-items:center;gap:8px;font-family:var(--m);
+  font-size:10.5px;letter-spacing:1.5px;color:var(--ash);
+  border:1px solid var(--line2);border-radius:999px;padding:7px 15px}
+.chip.live i{width:6px;height:6px;border-radius:50%;background:var(--good);
+  box-shadow:0 0 9px var(--good)}
+
+.acct{display:flex;align-items:center;gap:12px;padding:7px 18px 7px 8px;
+  border-radius:999px;background:var(--panel2);border:1px solid var(--line);
+  -webkit-app-region:no-drag}
+.acct:hover{border-color:var(--line2)}
+.acct .face{width:36px;height:36px;border-radius:50%;background:#2C2436 center/cover;
+  image-rendering:pixelated;flex:none}
+.acct .who{display:grid;line-height:1.15;text-align:left}
+.acct .who b{font-size:15px;font-weight:600;display:flex;align-items:center;gap:7px}
+.acct .who i{font-style:normal;font-size:12px;color:var(--pink);font-weight:600}
+.crown{width:13px;height:13px;color:var(--gold);fill:currentColor;stroke-width:1.2}
+
+.vline{width:1px;height:30px;background:var(--line2);margin:0 4px}
+.ico{width:38px;height:38px;border-radius:11px;color:var(--ash);display:grid;
+  place-items:center;-webkit-app-region:no-drag;position:relative}
+.ico:hover{background:var(--panel2);color:var(--bone)}
+.ico.dot::after{content:"";position:absolute;top:8px;right:9px;width:7px;height:7px;
+  border-radius:50%;background:var(--pink);border:2px solid var(--void)}
+.wbtns{display:flex;-webkit-app-region:no-drag;margin-left:8px;align-self:stretch}
+.wbtns button{width:46px;color:var(--ash);font-size:15px}
+.wbtns button:hover{background:#ffffff0d;color:var(--bone)}
+.wbtns button.x:hover{background:#E23B5A;color:#fff}
+
+/* ================= shell ================= */
+.shell{display:flex;gap:16px;height:calc(100% - 78px);padding:0 20px 18px}
+
+/* ---------------- sidebar ---------------- */
+.side{width:184px;flex:none;display:flex;flex-direction:column;gap:4px;
+  background:var(--panel);border:1px solid var(--line);border-radius:18px;padding:13px 11px 10px}
+.nav{display:flex;align-items:center;gap:13px;padding:13px 14px;border-radius:12px;
+  color:var(--ash);font-size:13px;font-weight:600;letter-spacing:1.2px;
+  border:1px solid transparent;transition:background .15s,color .15s}
+.nav:hover{background:#ffffff07;color:var(--bone)}
+.nav.on{background:linear-gradient(90deg,#FF3FA826,#FF3FA80A);color:var(--bone);
+  border-color:#FF3FA83A}
+.nav.on svg{color:var(--pink)}
+
+.plus{border:1px solid #FF3FA82E;border-radius:15px;padding:15px 14px 14px;
+  background:radial-gradient(120% 100% at 20% 0%,#FF3FA81F,transparent 70%),var(--panel2)}
+.plushead{display:flex;align-items:center;gap:9px;margin-bottom:9px}
+.gem{width:26px;height:26px;border-radius:8px;display:grid;place-items:center;
+  background:linear-gradient(160deg,#FF6BBE,#C4197E);color:#2A0418}
+.gem svg{width:15px;height:15px}
+.plushead b{font-size:14px;letter-spacing:1.5px}
+.plus p{margin:0 0 13px;font-size:12px;color:var(--ash);line-height:1.45}
+.up{width:100%;padding:11px;border-radius:10px;font-size:12px;font-weight:700;
+  letter-spacing:1.5px;color:#2A0418;background:linear-gradient(180deg,var(--pinkhi),var(--pink));
+  box-shadow:0 8px 20px #FF3FA83D}
+.up:hover{filter:brightness(1.07)}
+
+.socials{display:flex;justify-content:space-between;padding:16px 8px 4px}
+.socials a{color:var(--dim)}
+.socials a:hover{color:var(--pink)}
+.sidever{margin:0;text-align:center;font-family:var(--m);font-size:10.5px;color:#463F52}
+
+/* ---------------- centre ---------------- */
+.main{flex:1;min-width:0;overflow-y:auto;padding-right:4px}
+.page{display:none}
+.page.on{display:block}
+
+/* ---- hero ---- */
+.hero{position:relative;height:372px;border-radius:20px;overflow:hidden;
+  border:1px solid var(--line);background:var(--panel);margin-bottom:16px}
+/* The pony sits to the right of the text, on the panel rather than in a box:
+   the art was keyed to transparency so its own glow lands on our background
+   instead of a rectangle of somebody else's black.
+
+   Anchored right and sized by height so it keeps its proportions at any window
+   width - a background-size:cover here would crop the crown off first. */
+.heroart{position:absolute;inset:0;
+  background:
+    url('img/hero-pony.png') right 8% center/auto 92% no-repeat,
+    radial-gradient(48% 100% at 68% 45%, #FF3FA82E, transparent 64%),
+    repeating-linear-gradient(0deg,#ffffff04 0 1px,transparent 1px 36px),
+    repeating-linear-gradient(90deg,#ffffff04 0 1px,transparent 1px 36px),
+    linear-gradient(105deg,#141019,#0B0810)}
+/* Fades the art out under the text, so the wordmark and buttons always have
+   something flat to sit on however wide the window is. */
+.heroart::after{content:"";position:absolute;inset:0;
+  background:linear-gradient(90deg,#0B0810F5 2%,#0B0810C4 30%,transparent 56%)}
+
+.ready{position:absolute;top:22px;right:24px;z-index:3;display:inline-flex;
+  align-items:center;gap:9px;font-family:var(--m);font-size:10.5px;letter-spacing:1.6px;
+  color:var(--bone);background:#150F1CE6;border:1px solid var(--line2);
+  border-radius:999px;padding:10px 18px}
+.ready i{width:7px;height:7px;border-radius:50%;background:var(--good);box-shadow:0 0 9px var(--good)}
+
+.heroin{position:relative;z-index:2;padding:30px 34px}
+.eyebrow{font-family:var(--m);font-size:10.5px;letter-spacing:3.6px;color:var(--pink);margin:0 0 12px}
+/* The real graffiti wordmark. It was CSS gradient text standing in for exactly
+   this, which is why the element is unchanged apart from being empty now. */
+.wordmark{
+  width:340px;height:101px;margin-bottom:12px;
+  background:url('img/wordmark.png') left center/contain no-repeat;
+  filter:drop-shadow(0 6px 26px #FF3FA84D);
+}
+.tagline{margin:0 0 22px;color:var(--bone);font-size:14.5px;font-weight:500;opacity:.9}
+
+.cta{display:flex;margin-bottom:15px}
+.launch{display:flex;align-items:center;gap:12px;padding:0 40px;height:62px;
+  /* Rounded both sides. It was square on the right because a chevron button
+     used to sit against it; that button is gone and a flat edge against
+     nothing reads as a rendering fault. */
+  border-radius:14px;font-size:20px;font-weight:700;letter-spacing:2px;color:#2A0418;
+  background:linear-gradient(180deg,var(--pinkhi),var(--pink));
+  box-shadow:0 16px 38px #FF3FA84A, inset 0 1px 0 #ffffff5e;
+  transition:filter .13s}
+.launch svg{width:22px;height:22px;fill:currentColor;stroke:none}
+.launch:hover{filter:brightness(1.06)}
+.launch:disabled{filter:grayscale(.5) brightness(.85);cursor:default}
+
+.verrow{display:flex;gap:10px;align-items:stretch}
+.verbox{position:relative;display:flex;align-items:center;gap:12px;height:46px;
+  padding:0 40px 0 16px;border-radius:11px;background:#120E1AE0;
+  border:1px solid var(--line2);min-width:206px}
+.verbox b{font-size:15px;font-weight:700}
+.verbox i{font-style:normal;font-size:13px;color:var(--dim)}
+.verbox select{position:absolute;inset:0;opacity:0;width:100%;height:100%;cursor:pointer}
+.verbox::after{content:"";position:absolute;right:16px;width:7px;height:7px;
+  border-right:2px solid var(--ash);border-bottom:2px solid var(--ash);
+  transform:translateY(-3px) rotate(45deg);pointer-events:none}
+.cog{width:46px;height:46px;border-radius:11px;background:#120E1AE0;
+  border:1px solid var(--line2);color:var(--ash);display:grid;place-items:center}
+.cog:hover{color:var(--bone)}
+
+.progress{display:flex;align-items:flex-start;gap:12px;margin-top:14px;max-width:560px}
+.track{flex:none;width:150px;height:5px;border-radius:99px;background:#ffffff12;
+  overflow:hidden;margin-top:6px}
+.track i{display:block;height:100%;width:0%;border-radius:99px;
+  background:linear-gradient(90deg,var(--deep),var(--pinkhi));transition:width .3s}
+/* Was nowrap, which sent a long failure message straight across the hero and
+   under the performance panel - the half of the sentence that said WHAT failed
+   was the half that got covered. Wraps to two lines instead. */
+.ptxt{font-family:var(--m);font-size:11px;color:var(--ash);line-height:1.4;
+  overflow-wrap:anywhere;max-width:100%}
+.progress.failed .ptxt{color:#FF8A8A}
+
+.perf{position:absolute;right:24px;bottom:24px;z-index:3;width:206px;
+  background:#100C18D9;border:1px solid var(--line2);border-radius:14px;
+  padding:14px 16px 15px;backdrop-filter:blur(6px)}
+.perfhead{margin:0 0 11px;font-family:var(--m);font-size:9.5px;letter-spacing:2.2px;color:var(--ash)}
+.prow{display:grid;grid-template-columns:1fr auto;gap:3px 8px;margin-bottom:11px}
+.prow span{font-family:var(--m);font-size:10px;color:var(--dim);letter-spacing:.6px}
+.prow b{font-family:var(--m);font-size:11px;color:var(--pink);text-align:right}
+.prow i{grid-column:1/-1;height:3px;border-radius:99px;background:#ffffff12;position:relative}
+.prow i::after{content:"";position:absolute;inset:0;width:var(--w);border-radius:99px;
+  background:linear-gradient(90deg,var(--deep),var(--pinkhi))}
+.prow:last-child{margin-bottom:0}
+/* A bar implies a share of something. Mods and Java are facts, not fractions,
+   so they get no track rather than a bar filled to a number I made up. */
+.prow.flat{margin-bottom:9px}
+.prow.flat b{color:var(--bone)}
+
+/* ---- the three panels ---- */
+.trio{display:grid;grid-template-columns:1.15fr 1fr 1fr;gap:14px;margin-bottom:20px}
+.panel{position:relative;border:1px solid var(--line);border-radius:18px;
+  background:var(--panel);padding:17px 18px 18px;overflow:hidden;display:flex;flex-direction:column}
+.phead{display:flex;align-items:center;gap:9px;margin-bottom:13px}
+.phead h2{margin:0;font-size:11.5px;letter-spacing:2px;font-weight:700;
+  display:flex;align-items:center;gap:9px}
+.bul{width:7px;height:7px;border-radius:50%;background:var(--pink);box-shadow:0 0 9px var(--pink)}
+.tagnew{font-family:var(--m);font-size:9px;letter-spacing:1.2px;color:#2A0418;
+  background:var(--pink);border-radius:5px;padding:3px 8px;font-weight:700}
+.vtag{font-family:var(--m);font-size:10.5px;color:var(--pink)}
+
+.panel h3{margin:0 0 13px;font-size:21px;font-weight:700;letter-spacing:-.4px}
+.ticks{list-style:none;margin:0 0 16px;padding:0;display:grid;gap:9px}
+.ticks li{display:flex;align-items:center;gap:10px;font-size:13px;color:var(--bone)}
+/* A real tick, not two rotated rectangles - an inline SVG is one line and
+   cannot end up looking like a minus sign at the wrong zoom. */
+.ticks li::before{content:"";width:17px;height:17px;border-radius:50%;flex:none;
+  background-color:#3ED47F1F;border:1.5px solid #3ED47F80;
+  background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12'%3E%3Cpath d='M2.5 6.3l2.3 2.3 4.7-5' fill='none' stroke='%233ED47F' stroke-width='1.9' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+  background-size:11px 11px;background-position:center;background-repeat:no-repeat}
+
+.outline{display:inline-flex;align-items:center;gap:9px;padding:11px 16px;border-radius:10px;
+  border:1px solid var(--line2);color:var(--ash);font-size:11.5px;font-weight:600;
+  letter-spacing:1.2px;align-self:flex-start;margin-top:auto}
+.outline svg{width:13px;height:13px}
+.outline:hover{color:var(--bone);border-color:var(--ash)}
+.outline.wide{align-self:stretch;justify-content:center}
+.solid{padding:12px;border-radius:10px;font-size:11.5px;font-weight:700;letter-spacing:1.3px;
+  color:#2A0418;background:linear-gradient(180deg,var(--pinkhi),var(--pink));margin-top:auto}
+.solid:hover{filter:brightness(1.07)}
+/* The Settings rows are 13px tall inside; a full-width .solid swallows the
+   row, so the update button gets the compact shape the row already uses. */
+.solid.small{padding:8px 14px;border-radius:9px;font-size:10.5px;letter-spacing:1.1px}
+
+/* the spray-can flourish is decoration only - a slot for real art later */
+.sprayart{position:absolute;right:-30px;bottom:-26px;width:180px;height:160px;
+  pointer-events:none;opacity:.85;
+  background:
+    radial-gradient(closest-side at 60% 45%, #FF3FA84D, transparent 70%),
+    radial-gradient(closest-side at 40% 70%, #FF3FA82E, transparent 70%)}
+
+.acts{display:grid;gap:2px;margin-bottom:14px}
+.act{display:flex;align-items:center;gap:11px;padding:7px 0}
+.actico{width:28px;height:28px;border-radius:9px;display:grid;place-items:center;
+  background:#FF3FA814;color:var(--pink);flex:none}
+.actico svg{width:14px;height:14px}
+.actxt{display:grid;line-height:1.25;flex:1;min-width:0}
+.actxt b{font-size:13px;font-weight:600}
+.actxt i{font-style:normal;font-size:11px;color:var(--dim)}
+/* flex:none, or a long event title squeezes the timestamp until it reads
+   "1h ag" - which looks like a rendering bug rather than a tight column. */
+.actwhen{font-family:var(--m);font-size:10.5px;color:var(--dim);white-space:nowrap;
+  flex:none;padding-left:4px}
+
+/* A CENTRING BOX, BECAUSE A CAPE IS NOT THIS SHAPE.
+   The artwork used to be the background of this element, which is fine for a
+   square tag preview and wrong for a cape: a cape's visible panel is 10:16, so
+   filling a 186px-tall wide box with it stretches the flag sideways. Capes get
+   a .capepanel child that carries its own aspect ratio - the same element the
+   cosmetics row uses - and everything else still paints straight onto this. */
+.featart{height:186px;border-radius:13px;margin-bottom:13px;
+  display:grid;place-items:center;overflow:hidden;
+  background:radial-gradient(60% 60% at 50% 45%,#FF3FA83D,transparent 70%),#141019;
+  background-size:cover;background-position:center;image-rendering:pixelated;
+  border:1px solid var(--line)}
+.featart .capepanel{height:92%}
+.featname{margin:0 0 2px;font-size:19px}
+.featsub{margin:0 0 14px;font-size:12.5px;color:var(--ash)}
+
+.sechead{display:flex;align-items:center;justify-content:space-between;margin:0 0 12px}
+.sechead h2{margin:0;font-size:11.5px;letter-spacing:2px;font-weight:700;
+  display:flex;align-items:center;gap:9px}
+
+.servers{display:grid;grid-template-columns:repeat(5,1fr);gap:12px;padding-bottom:12px}
+.scard{border:1px solid var(--line);border-radius:15px;background:var(--panel);
+  padding:14px;text-align:left;transition:border-color .15s,transform .15s}
+.scard:hover{border-color:#FF3FA84D;transform:translateY(-2px)}
+.srow{display:flex;align-items:center;gap:10px;margin-bottom:10px}
+.sico{width:32px;height:32px;border-radius:9px;display:grid;place-items:center;
+  background:#FF3FA816;color:var(--pink);flex:none}
+.sico svg{width:17px;height:17px}
+.scard b{font-size:13.5px;font-weight:600;flex:1}
+.vpill{font-family:var(--m);font-size:9px;color:var(--ash);border:1px solid var(--line2);
+  border-radius:5px;padding:3px 6px}
+.count{display:flex;align-items:center;gap:8px;font-family:var(--m);font-size:11px;color:var(--ash)}
+.count .led{width:6px;height:6px;border-radius:50%;background:var(--good);box-shadow:0 0 7px var(--good)}
+.count .bars{margin-left:auto;display:flex;gap:2px;align-items:flex-end;height:11px}
+.count .bars i{width:3px;background:var(--pink);border-radius:1px;display:block;opacity:.85}
+.addsrv{display:grid;place-items:center;align-content:center;gap:7px;
+  border:1px dashed var(--line2);border-radius:15px;color:var(--dim);
+  font-size:11.5px;letter-spacing:1.2px;font-weight:600}
+.addsrv:hover{color:var(--bone);border-color:var(--ash)}
+.addsrv svg{width:22px;height:22px}
+
+.blank{border:1px dashed var(--line2);border-radius:18px;padding:70px 30px;
+  text-align:center;color:var(--ash)}
+.blank h2{margin:0 0 6px;color:var(--bone);font-size:21px}
+
+/* ---------------- right column ---------------- */
+.rightcol{width:396px;flex:none;overflow-y:auto;padding-right:2px}
+.rhead{display:flex;align-items:center;justify-content:space-between;margin:0 0 12px}
+.rhead.mt{margin-top:20px}
+.rhead h2{margin:0;font-size:11.5px;letter-spacing:2px;font-weight:700;
+  display:flex;align-items:center;gap:10px}
+.rhead h2 em{font-style:normal;font-size:11px;color:var(--pink);letter-spacing:1.3px}
+.rhead a{font-size:11.5px;color:var(--dim);font-family:var(--m)}
+.rhead a:hover{color:var(--bone)}
+
+.friends{display:grid;gap:7px}
+.frow{display:flex;align-items:center;gap:12px;padding:10px 13px;
+  border:1px solid var(--line);border-radius:14px;background:var(--panel)}
+.frow:hover{border-color:var(--line2)}
+.fface{width:34px;height:34px;border-radius:9px;background:#2C2436 center/cover;
+  image-rendering:pixelated;flex:none;position:relative}
+.fface::after{content:"";position:absolute;right:-2px;bottom:-2px;width:10px;height:10px;
+  border-radius:50%;background:var(--good);border:2px solid var(--panel)}
+.fface.off::after{background:#4A4553}
+.fmeta{display:grid;line-height:1.25;flex:1;min-width:0}
+.fmeta b{font-size:13.5px;font-weight:600;display:flex;align-items:center;gap:6px}
+.fmeta i{font-style:normal;font-size:11.5px;color:var(--dim);
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.more{color:var(--dim);padding:2px 5px;font-size:15px;line-height:1}
+.more:hover{color:var(--bone)}
+
+.feature{border:1px solid var(--line);border-radius:16px;background:var(--panel);
+  padding:15px;display:flex;gap:16px;margin-bottom:10px}
+.fbig{width:110px;height:142px;border-radius:12px;flex:none;
+  background:radial-gradient(70% 70% at 50% 40%,#FF3FA82E,transparent 70%),#141019;
+  background-size:cover;background-position:center;image-rendering:pixelated;
+  border:1px solid var(--line)}
+.finfo{display:grid;align-content:center;gap:2px;min-width:0}
+.finfo b{font-size:19px;font-weight:700;display:flex;align-items:center;gap:9px}
+.prem{font-family:var(--m);font-size:8.5px;letter-spacing:1.2px;color:#2A0418;
+  background:var(--pink);border-radius:5px;padding:3px 7px}
+.finfo span{font-size:12.5px;color:var(--ash);margin-bottom:12px}
+.frow2{display:flex;gap:9px}
+.equip{padding:11px 30px;border-radius:10px;font-size:12px;font-weight:700;
+  letter-spacing:1.3px;color:#2A0418;background:linear-gradient(180deg,var(--pinkhi),var(--pink))}
+.equip:hover{filter:brightness(1.07)}
+.wardrobe{width:44px;border-radius:10px;border:1px solid var(--line2);color:var(--ash);
+  display:grid;place-items:center}
+.wardrobe:hover{color:var(--bone)}
+
+.tiles{display:grid;grid-template-columns:repeat(4,1fr);gap:9px;margin-bottom:14px}
+.tile{height:68px;border-radius:13px;border:1px solid var(--line);background:var(--panel);
+  display:grid;place-items:center;background-size:cover;background-position:center;
+  image-rendering:pixelated;color:var(--pink)}
+.tile:hover{border-color:#FF3FA84D}
+.tile svg{width:26px;height:26px}
+.tile.more2{color:var(--ash);font-size:15px;font-weight:600}
+
+.joinus{display:flex;align-items:center;gap:14px;padding:16px 18px;border-radius:16px;
+  border:1px solid #FF3FA83D;
+  background:radial-gradient(120% 160% at 88% 50%,#FF3FA82E,transparent 62%),var(--panel)}
+.joinus:hover{border-color:#FF3FA870}
+.joinus b{display:block;font-size:12.5px;letter-spacing:1.6px;margin-bottom:4px;color:var(--pink)}
+.joinus span{font-size:11.5px;color:var(--ash);line-height:1.45;display:block}
+.dsc{margin-left:auto;width:52px;height:52px;border-radius:14px;flex:none;
+  display:grid;place-items:center;color:#fff;
+  background:linear-gradient(160deg,#7C4DFF,#C4197E);box-shadow:0 8px 22px #7C4DFF3D}
+.dsc svg{width:26px;height:26px}
+
+::-webkit-scrollbar{width:9px}
+::-webkit-scrollbar-thumb{background:#241E30;border-radius:99px;border:2px solid var(--void)}
+::-webkit-scrollbar-track{background:transparent}
+
+
+/* ---------------- mods page ---------------- */
+.modtop{display:flex;align-items:center;gap:16px;margin-bottom:14px}
+.modtop .sechead{margin:0}
+.search{display:flex;align-items:center;gap:10px;flex:1;max-width:340px;
+  border:1px solid var(--line);border-radius:11px;background:var(--panel);
+  padding:0 13px;height:40px;color:var(--dim)}
+.search:focus-within{border-color:#FF3FA84D}
+.search svg{width:15px;height:15px}
+.search input{flex:1;background:none;border:0;outline:0;color:var(--bone);
+  font-family:inherit;font-size:13px}
+.search input::placeholder{color:var(--dim)}
+.modcount{margin-left:auto;font-family:var(--m);font-size:11px;color:var(--dim)}
+
+.cats{display:flex;gap:8px;margin-bottom:16px;flex-wrap:wrap}
+.cat{padding:8px 15px;border-radius:999px;border:1px solid var(--line2);
+  color:var(--ash);font-size:11.5px;font-weight:600;letter-spacing:1.1px}
+.cat:hover{color:var(--bone)}
+.cat.on{background:linear-gradient(180deg,var(--pinkhi),var(--pink));
+  border-color:transparent;color:#2A0418}
+
+.mods{display:grid;grid-template-columns:repeat(auto-fill,minmax(272px,1fr));gap:12px}
+.mod{border:1px solid var(--line);border-radius:15px;background:var(--panel);
+  padding:15px 16px;display:flex;gap:13px;align-items:flex-start;
+  transition:border-color .15s}
+.mod.on{border-color:#FF3FA83D}
+.modmeta{display:grid;gap:3px;flex:1;min-width:0}
+.modmeta b{font-size:14px;font-weight:600}
+.modmeta i{font-style:normal;font-size:12px;color:var(--ash);line-height:1.45}
+.modcat{font-family:var(--m);font-size:9px;letter-spacing:1.2px;color:var(--dim);
+  border:1px solid var(--line2);border-radius:5px;padding:2px 6px;justify-self:start;
+  margin-top:5px}
+
+/* The switch is a button, not a checkbox - it has to be reachable by keyboard
+   and read as pressed, which aria-pressed on a button gives for free. */
+.sw2{width:42px;height:24px;border-radius:999px;background:#ffffff12;flex:none;
+  position:relative;transition:background .15s;margin-top:2px}
+.sw2::after{content:"";position:absolute;top:3px;left:3px;width:18px;height:18px;
+  border-radius:50%;background:var(--ash);transition:transform .15s,background .15s}
+.sw2[aria-pressed="true"]{background:linear-gradient(90deg,var(--deep),var(--pink))}
+.sw2[aria-pressed="true"]::after{transform:translateX(18px);background:#fff}
+
+.modempty{border:1px dashed var(--line2);border-radius:18px;padding:56px 30px;
+  text-align:center;color:var(--ash);grid-column:1/-1}
+.modempty h3{margin:0 0 7px;color:var(--bone);font-size:18px}
+.modempty p{margin:0;font-size:13px;line-height:1.5}
+
+/* ---------------- settings ---------------- */
+.setgroup{border:1px solid var(--line);border-radius:16px;background:var(--panel);
+  padding:6px 18px 10px;margin-bottom:14px}
+.setgroup h3{margin:14px 0 6px;font-size:10.5px;letter-spacing:2px;color:var(--dim);font-weight:700}
+.setrow{display:flex;align-items:center;gap:20px;padding:13px 0;border-top:1px solid var(--line)}
+.setgroup h3 + .setrow{border-top:0}
+.setmeta{display:grid;gap:3px;flex:1;min-width:0}
+.setmeta b{font-size:13.5px;font-weight:600}
+.setmeta i{font-style:normal;font-size:12px;color:var(--ash);line-height:1.45}
+.setctl{display:flex;align-items:center;gap:9px;flex:none}
+
+.range{-webkit-appearance:none;appearance:none;width:220px;height:5px;border-radius:99px;
+  background:#ffffff12;outline:0}
+.range::-webkit-slider-thumb{-webkit-appearance:none;width:15px;height:15px;border-radius:50%;
+  background:linear-gradient(180deg,var(--pinkhi),var(--pink));border:0;cursor:pointer;
+  box-shadow:0 2px 8px #FF3FA866}
+.setval{font-family:var(--m);font-size:11.5px;color:var(--bone);min-width:74px;text-align:right}
+
+.pathbox{font-family:var(--m);font-size:11px;color:var(--ash);background:var(--panel2);
+  border:1px solid var(--line);border-radius:9px;padding:8px 12px;max-width:300px;
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap;direction:rtl;text-align:left}
+.textbox{font-family:var(--m);font-size:12px;color:var(--bone);background:var(--panel2);
+  border:1px solid var(--line);border-radius:9px;padding:8px 12px;width:220px;outline:0}
+.textbox:focus{border-color:#FF3FA84D}
+.ghost{padding:8px 14px;border-radius:9px;border:1px solid var(--line2);color:var(--ash);
+  font-size:11.5px;font-weight:600;letter-spacing:.6px}
+.ghost:hover{color:var(--bone);border-color:var(--ash)}
+.setnote{font-family:var(--m);font-size:11px;color:var(--good);min-height:16px;margin:2px 0 0 4px}
+
+/* ---------------- cosmetics page ---------------- */
+.cosgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(168px,1fr));gap:12px}
+.cos{border:1px solid var(--line);border-radius:15px;background:var(--panel);overflow:hidden;
+  text-align:left;transition:border-color .15s,transform .15s}
+.cos:hover{border-color:#FF3FA84D;transform:translateY(-2px)}
+.cosart{height:118px;background:#141019 center/cover no-repeat;image-rendering:pixelated;
+  border-bottom:1px solid var(--line);position:relative}
+.cosbody{padding:11px 13px 13px;display:grid;gap:3px}
+.cosbody b{font-size:13px;font-weight:600}
+.cosbody span{font-family:var(--m);font-size:10.5px;color:var(--dim);letter-spacing:.8px}
+.owned{position:absolute;top:8px;right:8px;font-family:var(--m);font-size:8.5px;letter-spacing:1px;
+  color:#2A0418;background:var(--pink);border-radius:5px;padding:3px 7px}
+.locked{position:absolute;top:8px;right:8px;font-family:var(--m);font-size:8.5px;letter-spacing:1px;
+  color:var(--ash);background:#0009;border:1px solid var(--line2);border-radius:5px;padding:3px 7px}
+
+/* The card is a div now, not a button - it holds its own EQUIP button, and a
+   button inside a button is invalid markup that Chrome silently unnests. */
+.cos{display:flex;flex-direction:column}
+.cos .cosbody{flex:1}
+.cos.worn{border-color:var(--pink)}
+/* Dim locked ARTWORK only. A tag has no artwork - the text IS the product - so
+   dimming it just made half the store unreadable. */
+.cos.lockedcard .cosart:not(.tagart){filter:saturate(.45) brightness(.8)}
+.cos.lockedcard .tagart{opacity:.92}
+.wornbadge{position:absolute;top:8px;right:8px;font-family:var(--m);font-size:8.5px;
+  letter-spacing:1px;color:#2A0418;background:var(--good);border-radius:5px;padding:3px 7px}
+.cosact{margin:0 13px 13px;padding:8px 0;border-radius:9px;font-size:10.5px;font-weight:700;
+  letter-spacing:1.1px;color:#2A0418;background:linear-gradient(180deg,var(--pinkhi),var(--pink))}
+.cosact:hover{filter:brightness(1.07)}
+.cosact.off{background:none;border:1px solid var(--line2);color:var(--ash)}
+.cosact.off:hover{color:var(--bone)}
+.cosact:disabled{opacity:.55}
+
+/* A tag has no artwork - it IS text - so the tile draws the tag itself rather
+   than pointing at a PNG that does not exist and showing a broken tile. */
+.tagart{display:grid;place-items:center;padding:10px;
+  background:radial-gradient(75% 75% at 50% 45%,#FF3FA81F,transparent 70%),#141019}
+.mctag{font-family:var(--m);font-size:13px;font-weight:700;line-height:1.35;
+  text-align:center;word-break:break-word;
+  /* Minecraft draws tags on a dark HUD; without this the darker codes (&0, &1)
+     are invisible against the tile. */
+  text-shadow:0 1px 0 #000,0 0 6px #0009}
+.mctag.big{font-size:15px}
+/* &k is scrambling text in game. A timer per row would be twenty intervals
+   fighting the main thread for a store page, so it shimmers instead - it reads
+   as "this part moves" without animating characters. */
+.mcobf{animation:shimmer 1.1s steps(2,end) infinite;opacity:.85}
+@keyframes shimmer{0%,100%{opacity:.85}50%{opacity:.35}}
+#featSkin{display:grid;place-items:center;padding:8px;overflow:hidden}
+
+/* A cape is 10 wide by 16 tall. Letting it fill a landscape tile would stretch
+   a person's face sideways, so the panel keeps its own shape and sits on the
+   tile's backdrop. */
+.capeart{display:grid;place-items:center;
+  background:radial-gradient(70% 70% at 50% 40%,#FF3FA81A,transparent 70%),#141019}
+.capeart i,.capepanel{display:block;height:100%;aspect-ratio:10/16;border-radius:4px;
+  /* The artwork is a photograph, not pixel art. Nearest-sampling a minified
+     photo is what makes edges crawl - see the same note in BandLayout. */
+  image-rendering:auto}
+.capeart i{height:96%}
+.capepanel{height:100%;width:auto}
+
+/* A cosmetic whose file is not in the bucket. Says so, rather than sitting
+   there as an empty box that reads as "still loading" forever. */
+.goneart{display:grid;place-items:center;background:#141019;
+  border-bottom:1px solid var(--line)}
+.goneart span{font-family:var(--m);font-size:9.5px;letter-spacing:1.1px;
+  color:var(--dim);text-align:center;line-height:1.6}
+
+/* ---------------- servers page ---------------- */
+.srvlist{display:grid;gap:10px}
+.srvcard{display:flex;align-items:center;gap:15px;padding:15px 17px;border-radius:15px;
+  border:1px solid var(--line);background:var(--panel)}
+.srvcard:hover{border-color:#FF3FA84D}
+.srvmeta{display:grid;gap:3px;flex:1;min-width:0}
+.srvmeta b{font-size:14.5px;font-weight:600;display:flex;align-items:center;gap:9px}
+.srvmeta i{font-style:normal;font-family:var(--m);font-size:11px;color:var(--dim)}
+.play{padding:10px 22px;border-radius:10px;font-size:11.5px;font-weight:700;letter-spacing:1.2px;
+  color:#2A0418;background:linear-gradient(180deg,var(--pinkhi),var(--pink))}
+.play:hover{filter:brightness(1.07)}
+
+/* The right column belongs to the home page. Elsewhere the main column gets
+   its width back, which the settings and mods pages both want. */
+.rightcol{display:none}
+body.home .rightcol{display:block}
+
+
+/* ---------------- notifications ---------------- */
+/* Hung off the bell rather than the account button, so it opens under the
+   thing that was clicked. */
+.notifmenu{position:absolute;top:66px;right:56px;width:308px;z-index:40;
+  background:var(--panel2);border:1px solid var(--line2);border-radius:14px;
+  padding:9px;box-shadow:0 18px 44px #000000A6;-webkit-app-region:no-drag}
+.notifrow{display:flex;align-items:flex-start;gap:10px;padding:9px;border-radius:10px;
+  width:100%;text-align:left}
+.notifrow:hover{background:#ffffff0a}
+.nicon{width:26px;height:26px;border-radius:8px;flex:none;display:grid;place-items:center;
+  background:#FF3FA81F}
+.nicon svg{width:14px;height:14px;fill:none;stroke:var(--pink);stroke-width:2;
+  stroke-linecap:round;stroke-linejoin:round}
+.nmeta{display:grid;gap:2px;min-width:0}
+.nmeta b{font-size:12.5px;font-weight:600;line-height:1.3}
+.nmeta i{font-style:normal;font-size:11px;color:var(--dim);line-height:1.35}
+.notifempty{margin:6px;font-size:12px;color:var(--dim)}
+
+/* The friends panel, when you were sent here to look at it. */
+.friends.flash{animation:flashpanel 1.5s ease-out 1}
+@keyframes flashpanel{
+  0%{box-shadow:0 0 0 2px var(--pink),0 0 18px #FF3FA866}
+  100%{box-shadow:0 0 0 2px transparent,0 0 0 transparent}
+}
+
+/* ---------------- account switcher ---------------- */
+.accmenu{position:absolute;top:66px;right:150px;width:250px;z-index:40;
+  background:var(--panel2);border:1px solid var(--line2);border-radius:14px;
+  padding:9px;box-shadow:0 18px 44px #000000A6;-webkit-app-region:no-drag}
+.accmenuhead{margin:4px 6px 8px;font-family:var(--m);font-size:9.5px;letter-spacing:1.6px;
+  color:var(--dim)}
+.accrow{display:flex;align-items:center;gap:10px;padding:8px 9px;border-radius:10px;width:100%}
+.accrow:hover{background:#ffffff0a}
+.accrow.on{background:#FF3FA81F}
+.accface{width:26px;height:26px;border-radius:7px;background:#2C2436 center/cover;
+  image-rendering:pixelated;flex:none}
+.accrow b{font-size:13px;font-weight:600;flex:1;text-align:left}
+.accrow .tick{color:var(--pink);font-size:13px}
+.accrow .x{color:var(--dim);font-size:15px;padding:0 3px;line-height:1}
+.accrow .x:hover{color:#FF5C5C}
+.accadd{display:flex;align-items:center;gap:9px;width:100%;padding:9px;border-radius:10px;
+  color:var(--ash);font-size:12.5px;font-weight:600;border:1px dashed var(--line2);margin-top:6px}
+.accadd:hover{color:var(--bone);border-color:var(--ash)}
+.accadd svg{width:15px;height:15px}
+
+
+.addform{display:flex;align-items:center;gap:9px;margin-top:14px;flex-wrap:wrap}
+.textbox.wide{width:300px}
+.srvcard .status{font-family:var(--m);font-size:11px;color:var(--dim);min-width:96px;text-align:right}
+.srvcard .led.off{background:#4A4553;box-shadow:none}
+.srvcard .ms{font-family:var(--m);font-size:10px;color:var(--dim);margin-left:8px}
+
+
+/* ---------------- launch menu ---------------- */
+.cta{position:relative}
+.launchmenu{position:absolute;top:70px;left:0;width:290px;z-index:30;
+  background:var(--panel2);border:1px solid var(--line2);border-radius:14px;padding:9px;
+  box-shadow:0 18px 44px #000000A6}
+
+/* ---------------- installed mods ---------------- */
+.sechead.mt{margin-top:22px}
+.setnote.dim{color:var(--dim);margin:0 0 12px 2px}
+.jar{display:flex;align-items:center;gap:14px;padding:13px 16px;border-radius:14px;
+  border:1px solid var(--line);background:var(--panel)}
+.jar:hover{border-color:var(--line2)}
+.jar.off{opacity:.55}
+.jarmeta{display:grid;gap:2px;flex:1;min-width:0}
+.jarmeta b{font-size:13.5px;font-weight:600;display:flex;align-items:center;gap:9px}
+.jarmeta i{font-style:normal;font-size:11.5px;color:var(--dim);
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.jartag{font-family:var(--m);font-size:8.5px;letter-spacing:1px;color:#2A0418;
+  background:var(--pink);border-radius:5px;padding:3px 7px}
+.jarver{font-family:var(--m);font-size:10px;color:var(--ash);border:1px solid var(--line2);
+  border-radius:5px;padding:3px 6px}
+
+
+/* ---------------- profiles ---------------- */
+.verrow{position:relative}
+.verbox{display:flex;align-items:center;gap:10px;padding:0 14px;height:44px;
+  border-radius:12px;border:1px solid var(--line2);background:var(--panel)}
+.verbox:hover{border-color:#FF3FA84D}
+.verbox b{font-size:15px;font-weight:700}
+.verbox i{font-style:normal;font-size:12px;color:var(--ash)}
+.verbox svg{width:15px;height:15px;color:var(--ash)}
+.profmenu{position:absolute;top:52px;left:0;width:320px;z-index:30;
+  background:var(--panel2);border:1px solid var(--line2);border-radius:14px;padding:9px;
+  box-shadow:0 18px 44px #000000A6}
+.profmenu .accrow i{font-style:normal;font-size:11px;color:var(--dim)}
+
+
+.ghost.tiny{padding:5px 10px;font-size:10.5px}
+.frow .act{display:flex;gap:6px}
+.frow .mini{padding:5px 10px;border-radius:8px;font-size:10.5px;font-weight:700;
+  letter-spacing:.6px;color:#2A0418;background:linear-gradient(180deg,var(--pinkhi),var(--pink))}
+.frow .mini.ghosty{background:none;border:1px solid var(--line2);color:var(--ash)}
+.frow .mini.ghosty:hover{color:var(--bone)}
+.fsection{font-family:var(--m);font-size:9.5px;letter-spacing:1.6px;color:var(--dim);
+  margin:12px 2px 6px}
+.fsection:first-child{margin-top:0}
+/* The "nobody yet" row is a message, not a person - no avatar slot, no hover
+   lift, and it must not look clickable. */
+.frow.fempty{color:var(--dim);font-size:12px;line-height:1.5;padding:14px 13px;
+  border-style:dashed}
+.frow.fempty:hover{border-color:var(--line)}
+.frow .mini:disabled{opacity:.5}
+/* Its own rule rather than borrowing .tight from the servers page, which is
+   110px wide and cut the placeholder off mid-word. The box takes the column
+   and the button keeps its natural width. */
+.friendform{margin:10px 0 4px;gap:7px;flex-wrap:nowrap}
+.friendform .textbox{flex:1;min-width:0;padding:8px 11px}
+.friendform .ghost{flex:none}
+
+
+/* ---------------- profiles page ---------------- */
+/* A profile is a version plus its own mods folder, and this page is the only
+   place both halves are visible at once. The version grid sits under the
+   profile list rather than beside it: picking a version is something you do
+   once when creating a profile, not a thing you should be able to do to an
+   existing one by accident. */
+
+/* auto-fill, not auto-fit: with three supported versions the tiles should stay
+   tile-sized rather than stretching to fill a 1400px row each. */
+.vergrid{
+  display:grid; gap:10px; margin-bottom:14px;
+  grid-template-columns:repeat(auto-fill,minmax(150px,1fr));
+}
+.vertile{
+  display:flex; flex-direction:column; gap:4px; align-items:flex-start;
+  border:1px solid var(--line); border-radius:12px;
+  background:var(--panel); padding:13px 14px; text-align:left;
+  transition:border-color .15s, background .15s;
+}
+.vertile b{font-size:16px; font-weight:600; letter-spacing:-.3px}
+.vertile i{font-family:var(--m); font-size:10px; letter-spacing:1.4px;
+           text-transform:uppercase; color:var(--good); font-style:normal}
+.vertile:not(.soon):hover{border-color:var(--line2)}
+.vertile.on{border-color:var(--pink); background:linear-gradient(160deg,#23102040,var(--panel))}
+.vertile.on i{color:var(--pink)}
+/* The one you are playing wins the row - it is the only tile whose label is a
+   status rather than an offer. */
+.vertile.on b{color:var(--bone)}
+
+/* Greyed and not clickable, but still legible - the point of showing these is
+   that somebody can read which versions are coming. A tile faded to the point
+   of being unreadable would be worse than not listing it. */
+.vertile.soon{opacity:.45; cursor:default}
+.vertile.soon i{color:var(--dim)}
+
+
+/* A cape inside a tile wants to breathe - full height puts it edge to edge in
+   a 68px box and it stops reading as artwork. */
+.tile .capepanel{height:86%}
+
+/* Point releases within a line. Only drawn when the line has more than one,
+   so most of the time this row is not there at all. */
+.verpicks{display:flex; gap:8px; flex-wrap:wrap; margin:-4px 0 14px}
+.verchip{
+  font-family:var(--m); font-size:11.5px; color:var(--ash);
+  border:1px solid var(--line2); border-radius:999px; padding:6px 13px;
+  transition:color .15s, border-color .15s, background .15s;
+}
+.verchip:hover{color:var(--bone); border-color:var(--ash)}
+.verchip.on{color:#2A0418; background:var(--pink); border-color:var(--pink)}
+
+/* Settings > Copy from another version. A native select, dressed as a textbox. */
+select.textbox.pick{cursor:pointer;padding:7px 10px;min-width:150px}
+select.textbox.pick option{background:var(--panel2);color:var(--bone)}
+select.textbox.pick:disabled{opacity:.5;cursor:default}
+
+/* Update pill: shown over any page while an update downloads and installs. */
+.updtoast{position:fixed;left:50%;bottom:22px;transform:translateX(-50%);z-index:50;
+  font-family:var(--m);font-size:12px;letter-spacing:.04em;color:var(--bone);
+  background:var(--panel2);border:1px solid #FF3FA84D;border-radius:999px;
+  padding:9px 16px;box-shadow:0 8px 30px #0008;pointer-events:none}
+
+/* ---- terms of service gate ---------------------------------------------- */
+.tosgate{position:fixed;inset:0;z-index:80;display:flex;align-items:center;justify-content:center;
+  background:rgba(4,3,7,.82);backdrop-filter:blur(6px);padding:24px}
+.tosbox{width:min(560px,100%);max-height:100%;overflow:auto;background:var(--panel);border:1px solid var(--line2);
+  border-radius:16px;padding:26px 26px 20px;box-shadow:0 30px 80px rgba(0,0,0,.6),0 0 0 1px rgba(255,63,168,.12)}
+.tosbox h2{margin:0 0 10px;font-size:15px;letter-spacing:3px;font-family:var(--m);font-weight:600}
+.toslead{margin:0 0 10px;color:var(--ash);font-size:13.5px}
+.toslist{margin:0 0 14px;padding-left:18px;font-size:13.5px;line-height:1.55}
+.toslist li{margin:0 0 6px}
+.toslist li::marker{color:var(--pink)}
+.toslist b{color:var(--pinkhi);font-weight:600}
+.tosfine{margin:0 0 18px;color:var(--dim);font-size:11.5px}
+.tosbtns{display:flex;gap:8px;align-items:center}
+.tosbtns .grow{flex:1}
+.tosok{padding:9px 18px;border-radius:9px;background:var(--pink);color:#1A0512;font-weight:700;font-size:13px}
+.tosok:hover{background:var(--pinkhi)}
+
+/* FEATURED tag on the owner's pinned servers (1.2.1). */
+.ftag{font-family:var(--m);font-size:9px;font-weight:700;letter-spacing:1.2px;
+  color:#2A0418;background:var(--pink);border-radius:4px;padding:2px 6px;margin-right:8px;
+  vertical-align:2px}
