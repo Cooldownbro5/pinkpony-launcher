@@ -610,7 +610,7 @@ async function loadUpdate() {
 }
 
 /* ---------------- premium ---------------- */
-/* One tier since 2026-09-25: Premium, $5 a month, never auto-charged. The
+/* One tier since 2026-09-25: Premium, $5.99 a month (was $5 until 1.2.5), never auto-charged. The
    card in the rail says what you actually have rather than always
    advertising - somebody already paying being shown "UPGRADE" is how a
    purchase stops feeling like it did anything.
@@ -639,11 +639,11 @@ async function loadTier() {
     body.textContent = ends ? 'Active until ' + until(ends) + '.' : 'Active - no end date.';
     button.textContent = ends ? 'ADD A MONTH' : 'MANAGE';
   } else {
-    body.textContent = 'The client, every mod and the Premium tags. $5 a month, never auto-charged.';
+    body.textContent = 'The client, every mod and the Premium tags. $5.99 a month, never auto-charged.';
     button.textContent = 'GET PREMIUM';
   }
 
-  button.onclick = () => window.pp?.open?.('https://pinkponyclient.com/purchase.html');
+  button.onclick = () => window.pp?.open?.('https://pinkponyclient.com/store.html#premium');
 
   setupState.premiumUntil = ends;
   drawNotifications();
@@ -1599,7 +1599,7 @@ function cosCard(c) {
   act.textContent = busy ? '…' : worn ? 'REMOVE' : c.owned ? 'EQUIP' : 'GET';
 
   act.onclick = () => {
-    if (!c.owned) { window.pp?.open?.('https://pinkponyclient.com'); return; }
+    if (!c.owned) { window.pp?.open?.('https://pinkponyclient.com/store.html#cosmetics'); return; }
     // Only refuse when we KNOW the file is the problem.
     //
     // A failed image tells you nothing on its own - with no internet every
@@ -1840,7 +1840,7 @@ function notifications() {
       out.push({ icon: 'up',
                  text: days <= 0 ? 'Premium has ended' : `Premium ends in ${days} day${days === 1 ? '' : 's'}`,
                  sub: 'Open a ticket in the Discord to add a month',
-                 go: () => window.pp?.open?.('https://pinkponyclient.com/purchase.html') });
+                 go: () => window.pp?.open?.('https://pinkponyclient.com/store.html#premium') });
     }
   }
 
