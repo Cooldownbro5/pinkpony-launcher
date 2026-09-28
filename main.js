@@ -1556,6 +1556,96 @@ async function versionJavaNeed(mcVersion) {
   };
 }
 
+/*
+ * THE JVM ARGUMENTS MOJANG'S OWN LAUNCHER PASSES. Up to 1.2.5 we passed none.
+ *
+ * minecraft-launcher-core (3.18.2) never reads `arguments.jvm` from the
+ * version JSON - it hard-codes one flag per OS (the Windows HeapDumpPath) and
+ * that's all. For 1.21.1 that lost nothing that mattered. 26.3's JSON adds
+ * `-XX:StackShadowPages=32`, `--enable-native-access=ALL-UNNAMED` and
+ * `--add-exports java.base/jdk.internal.misc=ALL-UNNAMED`, and they are there
+ * for the new renderer: it compiles its shaders in native code (shaderc) on
+ * worker threads through Java's foreign-function API, and without the extra
+ * stack shadow pages a deep native call can walk past the thread's guard
+ * zone. That kills the JVM outright - no crash report, at best a truncated
+ * hs_err file - usually while resources reload, which is exactly how 26.3
+ * was dying (28 Sep: an EXCEPTION_ACCESS_VIOLATION inside
+ * Shaderc.shaderc_compile_into_spv on Worker-Main, plus a string of silent
+ * exits mid-reload with no packs selected).
+ *
+ * So this reads the vanilla JSON (the copy minecraft-launcher-core already
+ * saved under versions/, else Mojang's manifest), applies the rules the way
+ * the official launcher does, fills the placeholders, and hands the result to
+ * minecraft-launcher-core as customArgs. It leaves out what that library
+ * already adds itself - the classpath, java.library.path and its per-OS
+ * flag - so nothing is passed twice.
+ */
+function jvmRuleAllows(rules) {
+  if (!Array.isArray(rules) || !rules.length) return true;
+  const osName = process.platform === 'win32' ? 'windows' : process.platform === 'darwin' ? 'osx' : 'linux';
+  let allowed = false;
+  for (const r of rules) {
+    let match = true;
+    if (r.os) {
+      if (r.os.name && r.os.name !== osName) match = false;
+      if (r.os.arch && !(r.os.arch === 'x86' ? process.arch === 'ia32' : r.os.arch === process.arch)) match = false;
+      if (r.os.version) {
+        try { if (!new RegExp(r.os.version).test(require('os').release())) match = false; } catch { match = false; }
+      }
+    }
+    if (r.features) match = false;          // launcher features (demo, custom resolution) - never on here
+    if (match) allowed = r.action === 'allow';
+  }
+  return allowed;
+}
+
+async function vanillaVersionJson(root, mcVersion, custom) {
+  const local = custom && path.join(root, 'versions', custom, `${mcVersion}.json`);
+  try { if (local && fs.existsSync(local)) return JSON.parse(fs.readFileSync(local, 'utf8')); } catch { /* fall through */ }
+  const manifest = await fetch(MOJANG_VERSIONS).then((r) => r.json());
+  const entry = (manifest?.versions || []).find((v) => v.id === mcVersion);
+  if (!entry) return null;
+  return fetch(entry.url).then((r) => r.json());
+}
+
+async function mojangJvmArgs(root, mcVersion, custom) {
+  let json;
+  try { json = await vanillaVersionJson(root, mcVersion, custom); } catch { json = null; }
+  const list = json?.arguments?.jvm;
+  if (!Array.isArray(list)) return [];
+  const natives = path.join(root, 'natives', mcVersion);
+  const fill = {
+    natives_directory: natives,
+    launcher_name: 'pinkpony',
+    launcher_version: app.getVersion()
+  };
+  // minecraft-launcher-core adds these itself.
+  const skip = (a) => a === '-cp' || a === '${classpath}' || a.startsWith('-Djava.library.path=')
+    || a.startsWith('-XX:HeapDumpPath=') || a === '-XstartOnFirstThread' || a === '-Xss1M';
+  const out = [];
+  for (const item of list) {
+    const values = typeof item === 'string' ? [item]
+      : jvmRuleAllows(item?.rules) ? [].concat(item?.value ?? []) : [];
+    for (const raw of values) {
+      if (typeof raw !== 'string' || skip(raw)) continue;
+      const v = raw.replace(/\$\{(\w+)\}/g, (m, k) => (k in fill ? fill[k] : m));
+      if (/\$\{\w+\}/.test(v)) continue;     // a placeholder we don't know - leave the flag out rather than pass it raw
+      out.push(v);
+    }
+  }
+  return out;
+}
+
+/* Windows exit codes are NTSTATUS values; say the two that matter in words. */
+function describeExit(code) {
+  if (code === null || code === undefined) return 'killed';
+  const hex = '0x' + (code >>> 0).toString(16).toUpperCase().padStart(8, '0');
+  if (hex === '0xC0000005') return 'crashed - access violation';
+  if (hex === '0xC00000FD') return 'crashed - stack overflow';
+  if (code === 1 || code === -1) return `exited (${code})`;
+  return code < 0 || code > 255 ? `crashed (${hex})` : `exited (${code})`;
+}
+
 function sha1Of(file) {
   return require('crypto').createHash('sha1').update(fs.readFileSync(file)).digest('hex');
 }
@@ -1892,6 +1982,24 @@ async function launchGame(opts) {
   try { await startBridge(); writeBridgeFile(gameDir); bridgeGameDir = gameDir; }
   catch (e) { console.warn('bridge failed:', e?.message || e); }
 
+  // Mojang's own JVM flags for this version (see mojangJvmArgs), and native
+  // crash files next to the crash reports, where anyone looking for a crash
+  // looks, instead of wherever the JVM's working directory happens to be.
+  const vanillaJvm = await mojangJvmArgs(root, mcVersion, custom);
+  const crashDir = path.join(gameDir, 'crash-reports');
+  try { fs.mkdirSync(crashDir, { recursive: true }); } catch { /* the JVM falls back to its own default */ }
+  const jvmExtra = [
+    ...(java.major >= 22 ? ['-XX:+IgnoreUnrecognizedVMOptions'] : []),
+    ...vanillaJvm,
+    `-XX:ErrorFile=${path.join(crashDir, 'hs_err_pid%p.log')}`
+  ];
+  if (settings.keepLogs) {
+    try {
+      fs.appendFileSync(path.join(gameDir, 'launcher.log'),
+        `[${new Date().toLocaleTimeString('en-GB', { hour12: false })}] [Pink Pony launcher]: launcher ${app.getVersion()}, Java ${java.major}, Mojang JVM flags: ${vanillaJvm.join(' ') || 'none'}\n`);
+    } catch { /* never worth failing a launch over */ }
+  }
+
   const { Client } = require('minecraft-launcher-core');
   const launcher = new Client();
 
@@ -1912,6 +2020,15 @@ async function launchGame(opts) {
   });
   launcher.on('close', (code) => {
     gameRunning = false;
+    // Written into the same log as the game's output, so a session that ends
+    // without "Stopping!" says how it ended instead of just stopping.
+    if (settings.keepLogs) {
+      try {
+        fs.appendFileSync(path.join(gameDir, 'launcher.log'),
+          `[${new Date().toLocaleTimeString('en-GB', { hour12: false })}] [Pink Pony launcher]: game ${describeExit(code)}${code ? ` - exit code ${code}` : ''}\n`);
+      } catch { /* logging must never break the close handler */ }
+    }
+    if (code) addEvent('crash', `Minecraft ${describeExit(code)}`, `${mcVersion} - exit code ${code}`);
     // The game has now run at least once, so the hwid exists - the first
     // chance a brand new install has to link this account.
     linkAccount(loadAccount()).catch(() => {});
@@ -1929,7 +2046,7 @@ async function launchGame(opts) {
     }
     // An update that arrived mid-game installs now that the game is gone.
     if (updateWaiting) installUpdate();
-    say(100, code === 0 ? 'Closed' : `Game exited (${code})`, { done: true });
+    say(100, code === 0 ? 'Closed' : `Game ${describeExit(code)}`, { done: true });
     if (win && !win.isDestroyed() && settings.closeOnLaunch) win.show();
   });
 
@@ -1950,7 +2067,7 @@ async function launchGame(opts) {
       // it to ignore flags it does not recognise. HotSpot reads this one before
       // any other option, so where it sits in the list does not matter. Java 21
       // (1.21.1) is left exactly as it was.
-      customArgs: java.major >= 22 ? ['-XX:+IgnoreUnrecognizedVMOptions'] : undefined,
+      customArgs: jvmExtra,
       // gameDirectory is what makes a profile a profile: the game writes its
       // mods, config and saves here while root keeps the shared downloads.
       overrides: { detached: false, gameDirectory: gameDir },
