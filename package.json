@@ -9,7 +9,7 @@
     "release": "electron-builder --win --publish always"
   },
   "author": "Cooldownbro",
-  "license": "UNLICENSED",
+  "license": "MIT",
   "devDependencies": {
     "electron": "^32.0.0",
     "electron-builder": "^25.0.0"
