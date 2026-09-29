@@ -24,6 +24,7 @@ document.querySelectorAll('[data-win]').forEach((b) => {
 });
 
 const DISCORD = 'https://discord.gg/pinkp0ny';   // a zero, not an o
+const PATCH_NOTES = 'https://pinkponyclient.com/patchnotes.html';
 document.querySelectorAll('[data-discord]').forEach((a) => {
   a.onclick = (e) => { e.preventDefault(); window.pp?.open?.(DISCORD); };
 });
@@ -50,6 +51,9 @@ function showPage(name) {
   // home page they are just a 396px column of things you did not come here to
   // look at - and every other page gets that width back.
   document.body.classList.toggle('home', name === 'home');
+  // The 3D preview needs a visible, sized canvas, so it starts the first
+  // time the page is actually shown.
+  if (name === 'cosmetics') requestAnimationFrame(() => Fit.start());
 }
 
 document.querySelectorAll('.nav').forEach((b) => {
@@ -73,8 +77,10 @@ const version = { get value() { return profile.mc; } };
 
 function setVersion(v) {
   $('verNum').textContent = v;
-  $('sideVer').textContent = 'v' + v;
+  // (The rail used to print the MINECRAFT version here, as "v26.3", which read
+  // as the launcher's version. It shows the launcher's own now - see below.)
   $('updVer').textContent = 'v' + v;
+  const pf = $('placeFor'); if (pf) pf.textContent = profile.name || v;
   loadUpdate();
 }
 
@@ -119,49 +125,28 @@ function paintCopyFrom() {
 }
 
 function paintProfile() {
-  $('profName').textContent = profile.name;
-  const label = $('modsFor');
+  // Profiles are named after their version, so "26.3  26.3" said nothing
+  // twice. The second line says what the box does instead.
+  $('profName').textContent = profile.name && profile.name !== profile.mc ? profile.name : 'Change version';
   // The mods list shows the ACTIVE profile's folder, so the heading says which
   // one that is. Without it "Mods" on a profiles page reads as "all mods".
-  if (label) label.textContent = (profile.name || 'default').toUpperCase();
+  ['modsFor', 'dropFor'].forEach((id) => { const el = $(id); if (el) el.textContent = profile.name || profile.mc; });
   setVersion(profile.mc);
 }
 
-/* Versions we do not build a client for yet.
+/* THE VERSION CARDS.
  *
- * Shown, greyed, on purpose. A launcher that lists only 1.21.1 looks like it
- * cannot do anything else; one that lists everything and then fails on nine of
- * them out of ten looks broken. Saying "soon" is the only version of this that
- * is both useful and true.
+ * A version IS a profile - clicking a card switches to it and makes its
+ * folder the first time, there is no naming step. What changed in the rework
+ * is what a card says: which Pink Pony build that version's folder actually
+ * has, whether LAUNCH will update it, how many mods are in it and when it was
+ * last played - the things you would otherwise go digging in folders for.
  *
- * Anything here that later appears in client_builds drops out of this list
- * automatically - the live set wins, so this never has to be pruned by hand.
+ * Only versions we publish a client for are shown. The greyed "1.8 - coming
+ * soon" tile was a promise and a dead click; it went.
  */
-/* WHAT WE ACTUALLY INTEND TO BUILD, and nothing else.
- *
- * This listed nine lines at first, copied from Lunar. That reads as a wishlist
- * rather than a plan, and every greyed tile is a promise somebody will hold
- * you to - "when is 1.16?" has no good answer if the honest one is "never".
- *
- * 1.8.9 is here because it genuinely exists - it just runs through Forge and
- * Orbit today rather than through this launcher. Anything added below should
- * clear the same bar: work that is actually planned.
- */
-const SOON = ['1.8.9'];
+let BUILDS = {};                       // mc version -> newest published client version
 
-/* A VERSION IS A PROFILE. There is no naming step and no Create button.
- *
- * The first cut had a profile list, a version grid and a "name your profile"
- * form - three controls for what is really one decision. Nobody wants to name
- * anything; they want to play 1.21 and have their 1.21 mods there. So the
- * version tile IS the profile: clicking one switches to it, and creates its
- * folder the first time.
- *
- * Grouped by line because that is how people talk about Minecraft - nobody
- * plays "1.21.1", they play 1.21. The exact point release only appears as a
- * row of chips once a line has more than one build, which today it never does.
- */
-const LINES = ['1.21', '1.8'];
 const lineOf = (v) => String(v).split('.').slice(0, 2).join('.');
 
 /* Switch to a version, making its profile the first time it is asked for.
@@ -181,41 +166,80 @@ function drawVersions() {
   if (!grid) return;
   grid.textContent = '';
 
-  const live = {};
-  mcVersions.forEach((v) => { (live[lineOf(v)] ||= []).push(v); });
+  // Newest first: 26.x before 1.21, whatever order the rows came back in.
+  const byNum = (a, b) => {
+    const pa = String(a).split('.').map(Number), pb = String(b).split('.').map(Number);
+    for (let i = 0; i < 3; i++) if ((pb[i] || 0) !== (pa[i] || 0)) return (pb[i] || 0) - (pa[i] || 0);
+    return 0;
+  };
+  const versions = [...new Set(mcVersions)].sort(byNum);
+  const newest = versions[0];
 
-  const order = LINES.slice();
-  Object.keys(live).forEach((l) => { if (!order.includes(l)) order.unshift(l); });
-  SOON.forEach((v) => { const l = lineOf(v); if (!order.includes(l)) order.push(l); });
+  versions.forEach((v) => {
+    const mine = profiles.find((p) => p.mc === v);
+    const on = profile.mc === v;
+    const latest = BUILDS[v] || '';
+    // The active profile's jar is known exactly (loadJars reads it); the
+    // others come from the file name main.js saw in their folder.
+    const installed = on ? (updateInfo.installed || mine?.client || '') : (mine?.client || '');
 
-  const activeLine = lineOf(profile.mc);
+    const card = document.createElement('div');
+    card.className = 'profcard' + (on ? ' on' : '');
+    card.innerHTML = `
+      <span class="pcbg">${esc(v)}</span>
+      <div class="pctop">
+        <b class="pcver">${esc(v)}</b>
+        ${v === newest ? '<span class="pill hot">NEWEST</span>' : ''}
+        ${on ? '<span class="pill sel">SELECTED</span>' : ''}
+      </div>
+      <div class="pcstats">
+        <div><i>PINK PONY</i><b>${
+          !installed ? (latest ? esc(latest) + ' <em>installs on first launch</em>' : '&mdash;')
+          : installed === latest || !latest ? esc(installed) + ' <em class="pcok">up to date</em>'
+          : esc(installed) + ` <em class="pcup">&rarr; ${esc(latest)} on launch</em>`}</b></div>
+        <div><i>MODS</i><b>${mine ? mine.mods : 0}</b></div>
+        <div><i>LAST PLAYED</i><b>${mine?.lastPlayed ? esc(ago(mine.lastPlayed)) : 'Never'}</b></div>
+      </div>
+      <div class="pcact"></div>`;
 
-  order.forEach((l) => {
-    const have = live[l];
-    const on = have && l === activeLine;
-    // Mods are counted per profile by main.js, so this is the real number for
-    // this version's folder rather than a guess.
-    const mine = have && profiles.find((p) => lineOf(p.mc) === l);
+    const act = card.querySelector('.pcact');
+    const playBtn = document.createElement('button');
+    playBtn.className = 'solid small pcplay';
+    playBtn.innerHTML = '<svg viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>PLAY ' + esc(v);
+    playBtn.onclick = async () => {
+      if (!on) await useVersion(v);
+      showPage('home');
+      startGame();
+    };
+    act.appendChild(playBtn);
 
-    const b = document.createElement('button');
-    b.className = 'vertile' + (have ? '' : ' soon') + (on ? ' on' : '');
-    b.innerHTML = `<b>${esc(l)}</b><i>${
-      on   ? 'Playing &middot; ' + (mine?.mods || 0) + ' mod' + (mine?.mods === 1 ? '' : 's')
-      : have ? 'Available'
-      : 'Coming soon'}</i>`;
-
-    if (have) b.onclick = () => useVersion(have[0]);
-    else b.disabled = true;
-    grid.appendChild(b);
+    if (!on) {
+      const sel = document.createElement('button');
+      sel.className = 'ghost';
+      sel.textContent = 'Select';
+      sel.onclick = () => useVersion(v);
+      act.appendChild(sel);
+    }
+    if (mine) {
+      const folder = document.createElement('button');
+      folder.className = 'ghost';
+      folder.textContent = 'Folder';
+      folder.title = 'Open this version’s game folder';
+      folder.onclick = () => window.pp?.openPlace?.('profile', mine.id);
+      act.appendChild(folder);
+    }
+    // Clicking anywhere on a card that is not a button selects it.
+    card.onclick = (e) => { if (!on && !e.target.closest('button')) useVersion(v); };
+    grid.appendChild(card);
   });
 
   // Point releases, only when the line in play actually has more than one.
   const picks = $('verPicks');
   if (picks) {
     picks.textContent = '';
-    const have = live[activeLine];
-    picks.hidden = !have || have.length < 2;
-    if (have && have.length > 1) {
+    const have = versions.filter((v) => lineOf(v) === lineOf(profile.mc));
+    picks.hidden = have.length < 2;
+    if (have.length > 1) {
       have.forEach((v) => {
         const chip = document.createElement('button');
         chip.className = 'verchip' + (v === profile.mc ? ' on' : '');
@@ -238,9 +262,7 @@ function drawVersions() {
 
 async function loadJars() {
   const box = $('jarList');
-  if (!box) return;
   const jars = (await window.pp?.modsScan?.().catch(() => [])) || [];
-  box.textContent = '';
 
   /* Which Pink Pony jar is really on disk - the only honest thing to compare
      a published build against.
@@ -260,59 +282,88 @@ async function loadJars() {
             || jars.find((j) => /^pinkpony/i.test(j.file || ''));
   updateInfo.installed = String(ours?.version || '');
   drawNotifications();
+  drawVersions();                     // the selected card says which build it has
 
-  const hint = $('modsHint');
-  if (hint) {
-    hint.textContent = `${profile.name} · ${profile.mc} — drop a jar from `
-      + 'Modrinth or CurseForge into the folder and rescan.';
-  }
+  // The installed version above matters on every page; the list below only
+  // exists on Profiles. Work that out first, draw second.
+  if (!box) return;
+  box.textContent = '';
+
+  const on = jars.filter((j) => j.enabled).length;
+  const count = $('modsCount');
+  if (count) count.textContent = jars.length ? `${jars.length} installed · ${on} on` : '';
 
   if (!jars.length) {
-    box.innerHTML = '<div class="modempty"><h3>No jars yet</h3>'
-      + '<p>Open the folder, drop mods in, and rescan.</p></div>';
+    box.innerHTML = '<div class="modempty small"><h3>No mods yet</h3>'
+      + '<p>Pink Pony and Fabric API install themselves the first time you press PLAY. '
+      + 'Drop any other mod here.</p></div>';
     return;
   }
 
-  jars.forEach((j) => {
-    const row = document.createElement('div');
-    row.className = 'jar' + (j.enabled ? '' : ' off');
-    row.innerHTML =
-      `<span class="jarmeta">
-         <b>${esc(j.name)}
-           ${j.managed ? '<span class="jartag">PINK PONY</span>' : ''}
-           ${j.version ? `<span class="jarver">${esc(j.version)}</span>` : ''}</b>
-         <i>${esc(j.description || j.file)}</i>
-       </span>`;
+  // Pink Pony and what it needs first, then everything the player added.
+  const managed = jars.filter((j) => j.managed), theirs = jars.filter((j) => !j.managed);
+  const group = (label, list) => {
+    if (!list.length) return;
+    const h = document.createElement('p');
+    h.className = 'jargroup';
+    h.textContent = label;
+    box.appendChild(h);
+    list.forEach((j) => box.appendChild(jarRow(j)));
+  };
+  group('INSTALLED BY PINK PONY', managed);
+  group('YOUR MODS', theirs);
+  if (!theirs.length) {
+    box.insertAdjacentHTML('beforeend',
+      '<p class="jarnone">No mods of your own yet. Drop a .jar on this page to add one.</p>');
+  }
+}
 
-    const toggle = document.createElement('button');
-    toggle.className = 'sw2';
-    toggle.setAttribute('aria-pressed', String(j.enabled));
-    toggle.setAttribute('aria-label', j.name);
-    toggle.onclick = async () => {
-      await window.pp.modsFile('toggle', j.file);
-      loadJars();
-    };
-    row.appendChild(toggle);
+/* A letter tile rather than a guessed icon: mod jars carry an icon path, but
+   reading images out of zips from the renderer is not worth the bridge. */
+function jarRow(j) {
+  const row = document.createElement('div');
+  row.className = 'jar' + (j.enabled ? '' : ' off') + (j.managed ? ' managed' : '');
+  const letter = (String(j.name || j.file).match(/[A-Za-z0-9]/) || ['?'])[0].toUpperCase();
+  row.innerHTML =
+    `<span class="jaricon">${j.id === 'pinkpony' ? '<i class="ppmark"></i>' : esc(letter)}</span>
+     <span class="jarmeta">
+       <b>${esc(j.name)}
+         ${j.version ? `<span class="jarver">${esc(j.version)}</span>` : ''}
+         ${j.id === 'pinkpony' && updateInfo.latest && j.version && j.version !== updateInfo.latest
+           ? `<span class="jarup">${esc(updateInfo.latest)} on next launch</span>` : ''}</b>
+       <i>${esc(j.description || j.file)}</i>
+     </span>`;
 
-    const del = document.createElement('button');
-    del.className = 'more';
-    del.textContent = '\u00d7';
-    del.title = 'Delete ' + j.file;
-    del.onclick = async () => {
-      // Managed jars get a warning rather than a block: it is their folder,
-      // but deleting the client and then wondering where it went is a support
-      // message nobody enjoys either end of.
-      const warn = j.managed
-        ? `${j.name} is part of Pink Pony. The launcher will reinstall it next launch.\n\nDelete anyway?`
-        : `Delete ${j.file}?`;
-      if (!confirm(warn)) return;
-      await window.pp.modsFile('remove', j.file);
-      loadJars();
-    };
-    row.appendChild(del);
+  const toggle = document.createElement('button');
+  toggle.className = 'sw2';
+  toggle.setAttribute('aria-pressed', String(j.enabled));
+  toggle.setAttribute('aria-label', j.name);
+  toggle.title = j.enabled ? 'Turn off' : 'Turn on';
+  toggle.onclick = async () => {
+    if (j.managed && j.enabled
+        && !confirm(`Turn off ${j.name}? Pink Pony will not load without it.`)) return;
+    await window.pp.modsFile('toggle', j.file);
+    loadJars();
+  };
+  row.appendChild(toggle);
 
-    box.appendChild(row);
-  });
+  const del = document.createElement('button');
+  del.className = 'more';
+  del.innerHTML = '<svg viewBox="0 0 24 24"><path d="M5 7h14M10 7V5h4v2M7 7l1 12h8l1-12"/></svg>';
+  del.title = 'Delete ' + j.file;
+  del.onclick = async () => {
+    // Managed jars get a warning rather than a block: it is their folder,
+    // but deleting the client and then wondering where it went is a support
+    // message nobody enjoys either end of.
+    const warn = j.managed
+      ? `${j.name} is part of Pink Pony. The launcher will reinstall it next launch.\n\nDelete anyway?`
+      : `Delete ${j.file}?`;
+    if (!confirm(warn)) return;
+    await window.pp.modsFile('remove', j.file);
+    loadJars();
+  };
+  row.appendChild(del);
+  return row;
 }
 
 function wireJars() {
@@ -320,6 +371,34 @@ function wireJars() {
   if (!folder) return;
   folder.onclick = () => window.pp?.modsFolder?.();
   $('modsRescan').onclick = () => loadJars();
+
+  /* Drag a jar onto the Profiles page and it lands in this version's mods
+     folder. The page takes the drop anywhere, not just on a small target -
+     aiming a file at a strip is fiddly. Everything else dropped on the window
+     is refused, so a stray drop never navigates the launcher to a file. */
+  const page = document.querySelector('.page[data-page="profiles"]');
+  const zone = $('dropZone');
+  let depth = 0;
+  window.addEventListener('dragover', (e) => e.preventDefault());
+  window.addEventListener('drop', (e) => e.preventDefault());
+  page?.addEventListener('dragenter', (e) => { e.preventDefault(); depth++; zone?.classList.add('hot'); });
+  page?.addEventListener('dragleave', () => { if (--depth <= 0) { depth = 0; zone?.classList.remove('hot'); } });
+  page?.addEventListener('drop', async (e) => {
+    e.preventDefault();
+    depth = 0;
+    zone?.classList.remove('hot');
+    const files = [...(e.dataTransfer?.files || [])];
+    if (!files.length) return;
+    const res = await window.pp?.addMods?.(files).catch(() => null);
+    const hint = $('modsHint');
+    if (hint && res) {
+      hint.textContent = res.added.length
+        ? `Added ${res.added.join(', ')}.` + (res.skipped.length ? ` Skipped ${res.skipped.map((x) => `${x.name} (${x.why})`).join(', ')}.` : '')
+        : `Nothing added: ${res.skipped.map((x) => `${x.name} (${x.why})`).join(', ') || 'no files'}.`;
+    }
+    loadJars();
+    loadProfiles();
+  });
 }
 
 /* ---------------- launching ---------------- */
@@ -351,6 +430,12 @@ async function startGame(server) {
 /* main.js reports download and launch progress through here */
 window.pp?.onProgress(({ percent, text, done, failed }) => {
   setProgress(percent, text);
+  // LAUNCH is what installs a new client jar, so the moment the game is up
+  // (and again when it closes) the jar on disk is a different one. The
+  // installed version used to be read once, at boot, so the bell kept saying
+  // "2.60.4 is out - you have 2.60.2" after 2.60.4 was installed and played,
+  // until the launcher was restarted.
+  if (done || failed || text === 'Launched') loadJars();
   if (done || failed) {
     play.disabled = false;
     if (done) setTimeout(() => { progress.hidden = true; }, 1400);
@@ -405,6 +490,7 @@ async function loadAccounts() {
 }
 
 function drawAccounts() {
+  paintSettingsAccounts();                 // Settings > Account lists the same accounts
   const box = $('accList');
   if (!box) return;
   box.textContent = '';
@@ -575,6 +661,7 @@ async function loadVersions() {
                           + '&listed=eq.true&order=mc_version.desc');
   if (!rows.length) return;             // offline: keep whatever we have
   mcVersions = rows.map((r) => r.mc_version);
+  BUILDS = Object.fromEntries(rows.map((r) => [r.mc_version, String(r.client_version || '')]));
   // The profiles page draws its version tiles from this, so it has to repaint
   // when the list arrives - the first render happens before this resolves.
   drawVersions();
@@ -684,8 +771,7 @@ async function loadFeaturedServers() {
   const changed = JSON.stringify(clean) !== JSON.stringify(SERVERS);
   SERVERS = clean;
   serversLoaded = true;
-  if (changed) { loadServers(); loadServerPage(); pingAll(); }
-  else { loadServerPage(); }
+  if (changed) { loadServers(); pingAll(); }
 }
 
 function loadServers() {
@@ -1027,100 +1113,6 @@ function wireFriends() {
   setInterval(loadFriends, 60_000);
 }
 
-/* ---------------- mods page ---------------- */
-/* The module list is NOT defined here. The game writes modules.json listing
-   what this build actually supports, and this page edits the enabled flags.
-   A list in this file would drift from the jar within a week. */
-
-let MODS = [];
-let modCat = 'All';
-let modQuery = '';
-
-async function loadMods() {
-  const doc = await window.pp?.modsRead?.().catch(() => null);
-  MODS = Array.isArray(doc?.modules) ? doc.modules : [];
-  drawCats();
-  drawMods(doc?.missing);
-}
-
-function drawCats() {
-  const box = $('modCats');
-  if (!box) return;
-  box.textContent = '';
-  const cats = ['All', ...new Set(MODS.map((m) => m.category).filter(Boolean))];
-  cats.forEach((c) => {
-    const b = document.createElement('button');
-    b.className = 'cat' + (c === modCat ? ' on' : '');
-    b.textContent = c === 'All' ? 'ALL' : c.toUpperCase();
-    b.onclick = () => { modCat = c; drawCats(); drawMods(); };
-    box.appendChild(b);
-  });
-}
-
-function drawMods(missing) {
-  const box = $('mods');
-  if (!box) return;
-  box.textContent = '';
-
-  const shown = MODS.filter((m) =>
-    (modCat === 'All' || m.category === modCat) &&
-    (!modQuery || (m.name + ' ' + (m.description || '')).toLowerCase().includes(modQuery)));
-
-  $('modCount').textContent =
-    MODS.length ? `${MODS.filter((m) => m.enabled).length} of ${MODS.length} on` : '';
-
-  if (!shown.length) {
-    const d = document.createElement('div');
-    d.className = 'modempty';
-    d.innerHTML = missing
-      ? '<h3>Run the game once</h3><p>The client writes the list of modules it supports '
-        + 'when it starts. Launch once and they will all be here.</p>'
-      : '<h3>Nothing matches</h3><p>Try a different search or category.</p>';
-    box.appendChild(d);
-    return;
-  }
-
-  shown.forEach((m) => {
-    const card = document.createElement('div');
-    card.className = 'mod' + (m.enabled ? ' on' : '');
-    card.innerHTML =
-      `<span class="modmeta"><b>${esc(m.name)}</b><i>${esc(m.description || '')}</i>
-         <span class="modcat">${esc((m.category || '').toUpperCase())}</span></span>`;
-
-    const sw = document.createElement('button');
-    sw.className = 'sw2';
-    sw.setAttribute('aria-pressed', String(!!m.enabled));
-    sw.setAttribute('aria-label', m.name);
-    sw.onclick = () => toggleMod(m, sw, card);
-    card.appendChild(sw);
-    box.appendChild(card);
-  });
-}
-
-async function toggleMod(m, sw, card) {
-  const next = !m.enabled;
-  // Paint first, save second, and put it back if the save fails. A switch that
-  // waits on disk before moving feels broken even when it worked.
-  m.enabled = next;
-  sw.setAttribute('aria-pressed', String(next));
-  card.classList.toggle('on', next);
-  $('modCount').textContent = `${MODS.filter((x) => x.enabled).length} of ${MODS.length} on`;
-
-  try {
-    await window.pp.modsWrite({ [m.id]: next });
-  } catch (e) {
-    m.enabled = !next;
-    sw.setAttribute('aria-pressed', String(!next));
-    card.classList.toggle('on', !next);
-    launchNote('Could not save that: ' + (e?.message || e));
-  }
-}
-
-const modSearch = $('modSearch');
-if (modSearch) {
-  modSearch.oninput = () => { modQuery = modSearch.value.trim().toLowerCase(); drawMods(); };
-}
-
 /* ---------------- settings ---------------- */
 /* Every control saves the moment it changes. No Save button except on the
    access code, where typing half of one and having it saved would be worse
@@ -1150,7 +1142,6 @@ async function loadSettings() {
                                 closeOnLaunch: true, keepLogs: false }; }
   paintSettings();
   loadServers();
-  loadServerPage();
   loadFeaturedServers();
   if (!loadSettings.featuredTimer) {
     loadSettings.featuredTimer = setInterval(loadFeaturedServers, FEATURED_EVERY);
@@ -1168,13 +1159,89 @@ function gb(mb) {
 function paintSettings() {
   const mem = $('memRange');
   if (!mem) return;
-  mem.value = settings.memory;
+
+  // The slider tops out at what this PC has (less 2 GB for Windows), capped at
+  // 16 GB - past that Minecraft only gets slower at collecting its garbage.
+  const total = Number(settings.totalMemMb) || 16384;
+  const max = Math.max(2048, Math.min(16384, Math.floor((total - 2048) / 512) * 512));
+  mem.max = max;
+  mem.value = Math.min(settings.memory, max);
   $('memVal').textContent = gb(settings.memory);
+  $('memMax').textContent = gb(max);
+  $('memHint').textContent = total ? `of ${gb(Math.round(total / 1024) * 1024)} in this PC` : '';
+  paintMemScale();
+
   $('javaPath').textContent = settings.javaPath || 'Automatic';
   $('gameDir').textContent = settings.gameDir || settings.defaultGameDir || '.pinkpony';
   $('codeInput').value = settings.code || '';
+
+  const size = $('winSize');
+  if (size) {
+    const v = `${settings.windowWidth || 0}x${settings.windowHeight || 0}`;
+    if (![...size.options].some((o) => o.value === v)) {
+      const o = document.createElement('option');
+      o.value = v; o.textContent = v.replace('x', ' × ');
+      size.appendChild(o);
+    }
+    size.value = v;
+  }
+  swap($('fullscreen'), settings.fullscreen);
   swap($('closeOnLaunch'), settings.closeOnLaunch);
+  swap($('reopenOnClose'), settings.reopenOnClose !== false);
+  $('reopenRow')?.classList.toggle('muted', !settings.closeOnLaunch);
   swap($('keepLogs'), settings.keepLogs);
+}
+
+/* A marker on the memory slider where most people should be: 6 GB, or half
+   the PC on a small one. Changes nothing - it is a hint, not a limit. */
+function paintMemScale() {
+  const mem = $('memRange'), rec = $('memRec');
+  if (!mem || !rec) return;
+  const total = Number(settings?.totalMemMb) || 16384;
+  const want = Math.min(6144, Math.max(2048, Math.floor(total / 2 / 512) * 512));
+  const pct = (want - Number(mem.min)) / (Number(mem.max) - Number(mem.min)) * 100;
+  rec.style.left = Math.max(0, Math.min(100, pct)) + '%';
+  rec.textContent = 'Recommended ' + gb(want);
+  const v = Number(mem.value);
+  mem.style.setProperty('--fill', ((v - mem.min) / (mem.max - mem.min) * 100) + '%');
+}
+
+/* Settings > Account: every signed-in Minecraft account, the active one
+   first, each removable. Same data as the switcher in the header. */
+function paintSettingsAccounts() {
+  const box = $('setAccounts');
+  if (!box) return;
+  box.textContent = '';
+  const list = (accounts.accounts || []).slice()
+    .sort((a, b) => Number(b.uuid === accounts.active) - Number(a.uuid === accounts.active));
+  list.forEach((a) => {
+    const row = document.createElement('div');
+    row.className = 'saccrow' + (a.uuid === accounts.active ? ' on' : '');
+    row.innerHTML = `<span class="sface" style="background-image:url('${faceUrl(a.uuid, 64)}')"></span>
+      <span class="accwho"><b>${esc(a.name)}</b><i>${a.uuid === accounts.active ? 'Plays when you press LAUNCH' : 'Signed in'}</i></span>`;
+    if (a.uuid !== accounts.active) {
+      const use = document.createElement('button');
+      use.className = 'ghost tiny';
+      use.textContent = 'Use';
+      use.onclick = async () => { await window.pp?.selectAccount?.(a.uuid); loadAccounts(); };
+      row.appendChild(use);
+    }
+    const rm = document.createElement('button');
+    rm.className = 'ghost tiny';
+    rm.textContent = 'Sign out';
+    rm.onclick = async () => {
+      if (!confirm(`Sign ${a.name} out of the launcher?`)) return;
+      await window.pp?.removeAccount?.(a.uuid);
+      loadAccounts();
+    };
+    row.appendChild(rm);
+    box.appendChild(row);
+  });
+  const add = document.createElement('button');
+  add.className = 'ghost accaddrow';
+  add.innerHTML = '<svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg>Add account';
+  add.onclick = () => $('accAdd')?.click();
+  box.appendChild(add);
 }
 
 function swap(btn, on) { if (btn) btn.setAttribute('aria-pressed', String(!!on)); }
@@ -1195,7 +1262,7 @@ function wireSettings() {
 
   // Label follows the drag; the file is only written on release, or every
   // pixel of the drag would be a disk write.
-  mem.oninput = () => { $('memVal').textContent = gb(Number(mem.value)); };
+  mem.oninput = () => { $('memVal').textContent = gb(Number(mem.value)); paintMemScale(); };
   mem.onchange = () => save({ memory: Number(mem.value) }, 'Memory saved');
 
   document.querySelectorAll('[data-pick]').forEach((b) => {
@@ -1206,10 +1273,10 @@ function wireSettings() {
     };
   });
   document.querySelectorAll('[data-clear]').forEach((b) => {
-    b.onclick = () => save({ [b.dataset.clear]: '' }, 'Cleared');
+    b.onclick = () => save({ [b.dataset.clear]: '' }, 'Back to automatic');
   });
-  document.querySelectorAll('[data-open]').forEach((b) => {
-    b.onclick = () => window.pp?.showFolder?.(settings?.[b.dataset.open] || '');
+  document.querySelectorAll('[data-place]').forEach((b) => {
+    b.onclick = () => window.pp?.openPlace?.(b.dataset.place);
   });
 
   const code = $('codeInput');
@@ -1239,53 +1306,29 @@ function wireSettings() {
     }
   };
 
+  $('winSize').onchange = () => {
+    const [w, h] = $('winSize').value.split('x').map(Number);
+    save({ windowWidth: w, windowHeight: h }, w ? `Game opens at ${w} × ${h}` : 'Minecraft picks the size');
+  };
+  $('fullscreen').onclick = () => save({ fullscreen: !settings.fullscreen },
+    !settings.fullscreen ? 'Starts in fullscreen' : 'Starts in a window');
   $('closeOnLaunch').onclick = () => save({ closeOnLaunch: !settings.closeOnLaunch });
+  $('reopenOnClose').onclick = () => save({ reopenOnClose: settings.reopenOnClose === false });
   $('keepLogs').onclick = () => save({ keepLogs: !settings.keepLogs });
-}
 
-/* ---------------- servers page ---------------- */
-function loadServerPage() {
-  const box = $('srvList');
-  if (!box) return;
-  box.textContent = '';
+  // Start with Windows lives in the OS, so it is asked, not remembered.
+  const li = $('loginItem');
+  window.pp?.loginItem?.().then((r) => {
+    swap(li, r?.on);
+    if (r?.reason === 'dev') { li.disabled = true; li.title = 'Only in the installed launcher'; }
+  }).catch(() => {});
+  li.onclick = async () => {
+    const r = await window.pp?.loginItem?.(li.getAttribute('aria-pressed') !== 'true').catch(() => null);
+    if (r?.ok) { swap(li, r.on); note(r.on ? 'Opens when you sign in to Windows' : 'No longer starts with Windows'); }
+  };
 
-  if (!SERVERS.length) {
-    box.innerHTML = serversLoaded
-      ? '<div class="modempty"><h3>No featured servers yet</h3>'
-        + '<p>Check back soon. New servers show up here on their own.</p></div>'
-      : '<div class="modempty"><h3>Loading servers…</h3></div>';
-    $('srvCount').textContent = '';
-    return;
-  }
-
-  SERVERS.forEach((s) => {
-    const p = pings[s.ip];
-    const row = document.createElement('div');
-    row.className = 'srvcard';
-    row.innerHTML =
-      `<span class="sico"><svg viewBox="0 0 24 24">${SRVICO}</svg></span>
-       <span class="srvmeta">
-         <b><span class="ftag">${esc(s.tag)}</span>${esc(s.name)}${p?.version ? ` <span class="vpill">${esc(p.version)}</span>` : ''}</b>
-         <i>${esc(s.ip)}</i>
-       </span>
-       <span class="status">
-         <span class="led${p?.online ? '' : ' off'}"></span>
-         ${p ? (p.online ? `${p.players}/${p.max}<span class="ms">${p.ms}ms</span>` : 'offline')
-             : 'checking…'}
-       </span>`;
-
-    const play = document.createElement('button');
-    play.className = 'play';
-    play.textContent = 'PLAY';
-    play.title = 'Start the game and join ' + s.name;
-    play.onclick = () => { showPage('home'); startGame(s.ip); };
-    row.appendChild(play);
-
-    box.appendChild(row);
-  });
-
-  const up = SERVERS.filter((s) => pings[s.ip]?.online).length;
-  $('srvCount').textContent = `${up} of ${SERVERS.length} up`;
+  $('notesOpen').onclick = () => window.pp?.open?.(PATCH_NOTES);
+  $('helpOpen').onclick = () => window.pp?.open?.(DISCORD);
 }
 
 /* Pinged one at a time rather than all at once. Four servers is nothing, but
@@ -1299,13 +1342,7 @@ async function pingAll() {
       pings[s.ip] = { online: false };
     }
     loadServers();
-    loadServerPage();
   }
-}
-
-function wireServers() {
-  const r = $('srvRefresh');
-  if (r) r.onclick = () => { loadFeaturedServers().then(pingAll); };
 }
 
 /* ---------------- cosmetics page ---------------- */
@@ -1464,6 +1501,8 @@ async function loadCosmetics(name) {
   drawCosCats();
   drawCosmetics();
   paintHomeCosmetic();
+  Fit.player(name || account?.name || '');
+  Fit.wear(cosTrying);
 }
 
 /**
@@ -1515,6 +1554,8 @@ function cosList() {
     String(a.label).localeCompare(String(b.label)));
 }
 
+const KIND_LABEL = { cape: 'CAPES', tag: 'TAGS', headband: 'HEADBANDS', hat: 'HATS' };
+
 function drawCosCats() {
   const box = $('cosCats');
   if (!box) return;
@@ -1523,11 +1564,25 @@ function drawCosCats() {
   kinds.forEach((k) => {
     const b = document.createElement('button');
     b.className = 'cat' + (k === cosKind ? ' on' : '');
-    b.textContent = k.toUpperCase();
+    b.textContent = k === 'All' ? 'ALL' : (KIND_LABEL[k] || k.toUpperCase());
     b.onclick = () => { cosKind = k; drawCosCats(); drawCosmetics(); };
     box.appendChild(b);
   });
 }
+
+/*
+ * THE WARDROBE (reworked 30 Sep 2026).
+ *
+ * The old page was one flat grid where owned, worn, for sale and broken all
+ * looked the same: two "SilkPVP Cape" tiles reading "artwork missing", a pink
+ * GET next to a pink EQUIP, and no way to see anything on before buying it.
+ *
+ * Now: you on the left in 3D, wearing what is on; your collection and the
+ * shop as two separate sections on the right. Clicking a card TRIES IT ON -
+ * nothing is equipped until EQUIP - and owned items whose file was never
+ * uploaded are listed in one line instead of as dead tiles.
+ */
+let cosTrying = null;                 // the card being previewed, or null
 
 function drawCosmetics() {
   const box = $('cosGrid');
@@ -1535,16 +1590,45 @@ function drawCosmetics() {
   box.textContent = '';
 
   const all = cosList();
-  const shown = all.filter((c) =>
+  const match = (c) =>
     (cosKind === 'All' || c.kind === cosKind) &&
-    (!cosQuery || (c.label + ' ' + mcPlain(c.value)).toLowerCase().includes(cosQuery)));
+    (!cosQuery || (c.label + ' ' + mcPlain(c.value)).toLowerCase().includes(cosQuery));
 
-  const mine = all.filter((c) => c.owned).length;
-  $('cosCount').textContent = mine
-    ? `${mine} owned of ${all.length}`
-    : `${all.length} in the store`;
+  // An owned file that is definitely not in the bucket (and the bucket is
+  // reachable - some other artwork loaded) is not a card, it is a note.
+  const broken = (c) => c.kind !== 'tag' && checkArt(c.value, drawCosmetics) === 'gone' && anyArtLoaded();
+  const owned = all.filter((c) => c.owned && !broken(c));
+  const missing = all.filter((c) => c.owned && broken(c));
+  const shop = all.filter((c) => !c.owned && !broken(c));
 
-  if (!shown.length) {
+  $('cosCount').textContent = owned.length ? `${owned.length} owned · ${shop.length} in the shop`
+                                            : `${shop.length} in the shop`;
+
+  const section = (title, sub, list) => {
+    const shown = list.filter(match);
+    if (!shown.length) return 0;
+    const h = document.createElement('div');
+    h.className = 'coshead';
+    h.innerHTML = `<h2>${esc(title)} <em>${shown.length}</em></h2>${sub ? `<span>${esc(sub)}</span>` : ''}`;
+    box.appendChild(h);
+    const grid = document.createElement('div');
+    grid.className = 'cosgrid';
+    shown.forEach((c) => grid.appendChild(cosCard(c)));
+    box.appendChild(grid);
+    return shown.length;
+  };
+
+  const a = section('YOUR COLLECTION', 'Click to try on · EQUIP to wear it', owned);
+  if (missing.length && (cosKind === 'All' || missing.some((c) => c.kind === cosKind))) {
+    const n = document.createElement('p');
+    n.className = 'cosmissing';
+    n.textContent = `${missing.length} item${missing.length === 1 ? '' : 's'} you own ${missing.length === 1 ? 'has' : 'have'} no artwork uploaded yet (`
+      + [...new Set(missing.map((c) => c.label))].join(', ') + '). Staff can fix that in the Discord.';
+    box.appendChild(n);
+  }
+  const b = section('SHOP', 'Try anything on first', shop);
+
+  if (!a && !b) {
     const d = document.createElement('div');
     d.className = 'modempty';
     d.innerHTML = all.length
@@ -1552,71 +1636,205 @@ function drawCosmetics() {
       : '<h3>Nothing to show</h3><p>Sign in to see what you own, or check back '
         + 'once something is listed.</p>';
     box.appendChild(d);
-    return;
   }
-
-  shown.forEach((c) => box.appendChild(cosCard(c)));
+  paintSlots();
 }
 
 function cosCard(c) {
   const worn = isWorn(c);
   const busy = cosBusy === keyOf(c.kind, c.value);
+  const trying = cosTrying && keyOf(cosTrying.kind, cosTrying.value) === keyOf(c.kind, c.value);
 
   const card = document.createElement('div');
-  card.className = 'cos' + (worn ? ' worn' : '') + (c.owned ? '' : ' lockedcard');
-
-  // Three different things, three different tiles.
-  //
-  //   tag        has no artwork - it IS text - so it is drawn rather than
-  //              pointed at a PNG that does not exist and left broken
-  //   cape       a 64x32-layout SHEET, not a picture. Showing the whole file
-  //              puts the inside panel and the edge strips on screen and
-  //              squeezes the visible part into a corner. CAPE_UV crops to the
-  //              one panel people actually see.
-  //   everything else   a plain image
-  // Tags are text and always exist; everything else is a file that might not.
+  card.className = 'cos2' + (worn ? ' worn' : '') + (c.owned ? '' : ' shop') + (trying ? ' trying' : '')
+                 + (c.kind === 'tag' ? ' tagcard' : '');
   const state = c.kind === 'tag' ? 'ok' : checkArt(c.value, drawCosmetics);
 
-  const art = c.kind === 'tag'
-    ? `<div class="cosart tagart"><span class="mctag">${mcHtml(c.value)}</span>`
+  const artHtml = c.kind === 'tag'
+    ? `<div class="c2art tagart"><span class="plate"><span class="mctag">${mcHtml(c.value)}</span></span></div>`
     : state === 'gone'
-    ? `<div class="cosart goneart"><span>${anyArtLoaded() ? 'artwork<br>missing' : 'offline'}</span>`
+    ? `<div class="c2art goneart"><span>${anyArtLoaded() ? 'no artwork' : 'offline'}</span></div>`
     : c.kind === 'cape'
-    ? `<div class="cosart capeart"><i style="background-image:url('${cosArt(c.value)}');${CAPE_UV}"></i>`
-    : `<div class="cosart" style="background-image:url('${cosArt(c.value)}')">`;
+    ? `<div class="c2art capeart"><i style="background-image:url('${cosArt(c.value)}');${CAPE_UV}"></i></div>`
+    : `<div class="c2art" style="background-image:url('${cosArt(c.value)}')"></div>`;
 
-  const badge = worn ? '<span class="wornbadge">EQUIPPED</span>'
-              : c.owned ? '<span class="owned">OWNED</span>'
-              : `<span class="locked">${esc(c.price || (c.premium ? 'PREMIUM' : 'LOCKED'))}</span>`;
+  const badge = worn ? '<span class="c2badge on">WEARING</span>'
+              : !c.owned && c.premium ? '<span class="c2badge prem">PREMIUM</span>'
+              : '';
+  const sub = c.owned ? (KIND_LABEL[c.kind] || c.kind || '').replace(/S$/, '')
+            : (c.price ? c.price : c.premium ? 'Premium' : 'Not for sale');
 
-  card.innerHTML = art + badge + '</div>'
-    + `<div class="cosbody"><b>${esc(c.label)}</b>`
-    + `<span>${esc(String(c.kind || '').toUpperCase())}</span></div>`;
+  card.innerHTML = artHtml + badge
+    + `<div class="c2body"><b>${esc(c.label)}</b><span>${esc(String(sub).toUpperCase())}</span></div>`;
 
   const act = document.createElement('button');
-  act.className = 'cosact' + (worn ? ' off' : '');
+  act.className = 'c2act' + (worn ? ' off' : c.owned ? '' : ' buy');
   act.disabled = busy;
-  act.textContent = busy ? '…' : worn ? 'REMOVE' : c.owned ? 'EQUIP' : 'GET';
-
-  act.onclick = () => {
-    if (!c.owned) { window.pp?.open?.('https://pinkponyclient.com/store.html#cosmetics'); return; }
-    // Only refuse when we KNOW the file is the problem.
-    //
-    // A failed image tells you nothing on its own - with no internet every
-    // cosmetic fails, and blocking on that turns "you are offline" into "your
-    // cosmetics do not exist", which is a far worse lie than a missing
-    // thumbnail. If some other artwork loaded fine, this one really is absent
-    // and equipping it would put an invisible cosmetic on your back.
-    if (state === 'gone' && !worn && anyArtLoaded()) {
-      cosNote(`${c.label} has no artwork uploaded yet.`);
-      return;
-    }
-    equip(c, worn ? '' : c.value);
-  };
-
+  act.textContent = busy ? '…' : worn ? 'REMOVE' : c.owned ? 'EQUIP'
+                  : c.price ? 'GET ' + c.price : c.premium ? 'GET PREMIUM' : 'VIEW';
+  act.onclick = (e) => { e.stopPropagation(); cosAction(c, state); };
   card.appendChild(act);
+
+  card.onclick = () => tryOn(c);
   return card;
 }
+
+/* What the main button on a card (or the try-on bar) does. */
+function cosAction(c, state) {
+  const worn = isWorn(c);
+  if (!c.owned) {
+    window.pp?.open?.(c.premium && !c.price ? 'https://pinkponyclient.com/store.html#premium'
+                                            : 'https://pinkponyclient.com/store.html#cosmetics');
+    return;
+  }
+  // Only refuse when we KNOW the file is the problem - see checkArt.
+  if (state === 'gone' && !worn && anyArtLoaded()) {
+    cosNote(`${c.label} has no artwork uploaded yet.`);
+    return;
+  }
+  equip(c, worn ? '' : c.value);
+}
+
+/* ---- the 3D preview ---- */
+function tryOn(c) {
+  if (!c) { cosTrying = null; Fit.wear(); paintTryBar(); drawCosmetics(); return; }
+  const same = cosTrying && keyOf(cosTrying.kind, cosTrying.value) === keyOf(c.kind, c.value);
+  cosTrying = same ? null : c;          // clicking it again puts it back
+  Fit.wear(cosTrying);
+  paintTryBar();
+  drawCosmetics();
+}
+
+function paintTryBar() {
+  const bar = $('tryBar');
+  if (!bar) return;
+  const c = cosTrying;
+  bar.hidden = !c || isWorn(c);
+  if (bar.hidden) return;
+  $('tryName').textContent = c.label;
+  const act = $('tryAct');
+  act.textContent = c.owned ? 'EQUIP' : c.price ? 'GET ' + c.price : 'GET PREMIUM';
+  act.classList.toggle('buy', !c.owned);
+  act.onclick = () => cosAction(c, c.kind === 'tag' ? 'ok' : checkArt(c.value, () => {}));
+  $('tryReset').onclick = () => tryOn(null);
+}
+
+/* The two slots under the model: what is on, and a way to take it off. */
+function paintSlots() {
+  const list = cosList();
+  const cape = list.find((c) => c.kind === 'cape' && isWorn(c));
+  const tag = list.find((c) => c.kind === 'tag' && isWorn(c));
+  const set = (id, item, artHtml) => {
+    const name = $(id + 'Name'), artEl = $(id + 'Art'), off = $(id + 'Off');
+    if (!name) return;
+    name.textContent = item ? item.label : 'None';
+    artEl.innerHTML = item ? artHtml : '';
+    off.hidden = !item;
+    off.onclick = () => item && equip(item, '');
+  };
+  set('slotCape', cape, cape ? `<i style="background-image:url('${cosArt(cape.value)}');${CAPE_UV}"></i>` : '');
+  set('slotTag', tag, tag ? `<span class="mctag">${mcHtml(tag.value)}</span>` : '');
+}
+
+/*
+ * The model. Same approach as the website's fitting room (skinview3d, turn
+ * side to side only, the name tag pinned over the head by projecting its
+ * position every frame) - but vendored into the launcher rather than loaded
+ * from a CDN, because this window has the pp bridge and nothing remote gets
+ * to run script in it.
+ */
+const Fit = (() => {
+  let viewer = null, started = false, who = '', tmp = null;
+  const canvas = () => $('cosCanvas'), stage = () => $('cosStage');
+
+  function start() {
+    if (started) return;
+    const st = stage(), cv = canvas();
+    if (!st || !cv || !st.clientWidth) return;       // page not visible yet
+    started = true;
+    if (window.skinview3d) {
+      try {
+        viewer = new skinview3d.SkinViewer({ canvas: cv, width: st.clientWidth, height: st.clientHeight });
+        viewer.fov = 36; viewer.zoom = 0.6;
+        viewer.animation = new skinview3d.WalkingAnimation(); viewer.animation.speed = 0.5;
+        viewer.controls.enablePan = false; viewer.controls.enableZoom = false;
+        viewer.controls.minPolarAngle = viewer.controls.maxPolarAngle = Math.PI / 2;
+        viewer.playerObject.rotation.y = Math.PI - 0.55;   // start from behind: capes are on the back
+        viewer.autoRotateSpeed = 0.8;
+        // Hidden pages measure 0x0; a zero-sized WebGL canvas errors on every
+        // frame, so a resize to nothing is ignored.
+        new ResizeObserver(() => {
+          if (st.clientWidth && st.clientHeight) viewer.setSize(st.clientWidth, st.clientHeight);
+        }).observe(st);
+      } catch { viewer = null; }
+    }
+    if (!viewer) { cv.hidden = true; $('cosCtl').hidden = true; }
+    $('cosCtl')?.addEventListener('click', (e) => {
+      const b = e.target.closest('button'); if (!b || !viewer) return;
+      if (b.dataset.anim) {
+        const walk = b.getAttribute('aria-pressed') !== 'true';
+        viewer.animation = walk ? new skinview3d.WalkingAnimation() : new skinview3d.IdleAnimation();
+        viewer.animation.speed = walk ? 0.5 : 1;
+        b.setAttribute('aria-pressed', String(walk));
+      } else if (b.hasAttribute('data-spin')) {
+        viewer.autoRotate = !viewer.autoRotate; b.setAttribute('aria-pressed', String(viewer.autoRotate));
+      } else if (b.hasAttribute('data-turn')) {
+        viewer.playerObject.rotation.y += Math.PI;
+      }
+    });
+    requestAnimationFrame(track);
+    player(who);
+    wear(cosTrying);
+  }
+
+  /* Keep the tag over the head, wherever the model has turned to. */
+  function track() {
+    const nt = $('cosNt');
+    const head = viewer?.playerObject?.skin?.head;
+    if (nt && head && !canvas().hidden) {
+      if (!tmp) tmp = head.position.clone();
+      head.getWorldPosition(tmp); tmp.y += 6.4; tmp.project(viewer.camera);
+      const w = canvas().clientWidth, h = canvas().clientHeight;
+      const x = (tmp.x * 0.5 + 0.5) * w, y = (-tmp.y * 0.5 + 0.5) * h;
+      nt.style.transform = `translate(${Math.round(x - nt.offsetWidth / 2)}px, ${Math.round(y - nt.offsetHeight)}px)`;
+    }
+    requestAnimationFrame(track);
+  }
+
+  function player(name) {
+    who = /^[A-Za-z0-9_]{3,16}$/.test(name || '') ? name : '';
+    const n = $('cosNtName'); if (n) n.textContent = who || 'Steve';
+    const skin = `https://mc-heads.net/skin/${who || 'MHF_Steve'}`;
+    if (viewer) viewer.loadSkin(skin).catch(() => viewer.loadSkin('https://mc-heads.net/skin/MHF_Steve').catch(() => {}));
+    else if (started) {
+      const flat = $('cosFlat'); flat.hidden = false;
+      flat.src = `https://mc-heads.net/body/${who || 'MHF_Steve'}/300`;
+    }
+  }
+
+  /* Put the worn things on, with `trying` swapped in over its own slot. */
+  function wear(trying) {
+    const list = cosList();
+    const worn = (kind) => list.find((c) => c.kind === kind && isWorn(c));
+    const cape = trying?.kind === 'cape' ? trying : worn('cape');
+    const tag = trying?.kind === 'tag' ? trying : worn('tag');
+
+    const tagEl = $('cosNtTag');
+    if (tagEl) { tagEl.innerHTML = tag ? mcHtml(tag.value) : ''; tagEl.hidden = !tag; }
+    const hint = $('cosStage');
+    if (hint) hint.classList.toggle('previewing', !!trying && !isWorn(trying));
+
+    if (!viewer) return;
+    if (cape && checkArt(cape.value, () => {}) !== 'gone') {
+      viewer.loadCape(cosArt(cape.value)).catch(() => viewer.resetCape());
+      if (trying?.kind === 'cape') viewer.playerObject.rotation.y = Math.PI - 0.55;
+    } else {
+      viewer.resetCape();
+    }
+  }
+
+  return { start, player, wear };
+})();
 
 const cosArt = (file) => art(file);
 
@@ -1710,6 +1928,9 @@ async function equip(c, value) {
   if (col) WORN[col] = value;
 
   cosNote(value ? `${c.label} equipped.` : `${c.label} removed.`, true);
+  if (cosTrying && keyOf(cosTrying.kind, cosTrying.value) === keyOf(c.kind, c.value)) cosTrying = null;
+  Fit.wear(cosTrying);
+  paintTryBar();
   drawCosmetics();
   paintHomeCosmetic();
   loadActivity();
@@ -1931,11 +2152,11 @@ function wireStrays() {
     fullHistory.onclick = () => loadActivity();
   }
 
-  // Patch notes get posted in Discord, so that is where this goes. A button
-  // pointing at a notes page that does not exist would be the same dead click
-  // with extra steps.
+  // Every release's notes, on the website (patchnotes.html, read from the
+  // patch_notes table that /clientbuild fills). Opens at the one shown here.
   const patch = document.querySelector('.update .outline');
-  if (patch) patch.onclick = () => window.pp?.open?.(DISCORD);
+  if (patch) patch.onclick = () => window.pp?.open?.(
+    PATCH_NOTES + (updateInfo.latest ? '#v' + updateInfo.latest : ''));
 
   // X, YouTube and TikTok have no accounts yet. Rather than leave three links
   // that do nothing, they are removed - they can come back the day there is
@@ -1951,6 +2172,18 @@ if (cosSearch) {
   cosSearch.oninput = () => { cosQuery = cosSearch.value.trim().toLowerCase(); drawCosmetics(); };
 }
 
+/* Coming back to the window re-reads what can change behind its back: the
+   jar (the game or a person may have swapped it), the published build and
+   the friends list. Throttled, because focus fires on every alt-tab. */
+let lastRefresh = Date.now();
+window.addEventListener('focus', () => {
+  if (Date.now() - lastRefresh < 20000) return;
+  lastRefresh = Date.now();
+  loadJars();
+  loadUpdate();
+  loadFriends();
+});
+
 /* ---------------- boot ---------------- */
 loadActivity();
 loadProfiles();
@@ -1959,8 +2192,6 @@ loadUpdate();
 loadJars();
 wireJars();
 loadTier();
-loadMods();
-wireServers();
 wireSettings();
 loadSettings();
 loadCosmetics(null);
@@ -1987,6 +2218,8 @@ loadFeatured();
   try {
     const v = await window.pp?.appVersion?.();
     el.textContent = v ? 'v' + v : 'unknown';
+    const side = $('sideVer');
+    if (side) side.textContent = v ? 'Launcher v' + v : '';
   } catch {
     // An older main process with no handler for this. Saying "unknown" is
     // honest; leaving the em dash looks like the row is still loading.

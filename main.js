@@ -56,7 +56,30 @@ function createWindow() {
   win.loadFile(path.join(__dirname, 'renderer', 'index.html'));
 }
 
-app.whenReady().then(() => { createWindow(); startUpdates(); });
+/*
+ * ONE LAUNCHER AT A TIME.
+ *
+ * There was no single-instance lock, so double-clicking the shortcut while the
+ * launcher sat hidden behind a running game started a SECOND launcher: its own
+ * update check, its own download, and an installer trying to replace files the
+ * first copy still had open. A second start now just brings the first window
+ * back - and asks GitHub again, because "I opened it to see if there's an
+ * update" is exactly why people do that.
+ */
+const gotLock = app.requestSingleInstanceLock();
+if (!gotLock) {
+  app.quit();
+} else {
+  app.on('second-instance', () => {
+    if (win && !win.isDestroyed()) {
+      if (win.isMinimized()) win.restore();
+      win.show();
+      win.focus();
+    }
+    checkForUpdate('second-instance');
+  });
+  app.whenReady().then(() => { createWindow(); startUpdates(); });
+}
 app.on('window-all-closed', () => { if (process.platform !== 'darwin') app.quit(); });
 app.on('activate', () => { if (BrowserWindow.getAllWindows().length === 0) createWindow(); });
 
@@ -112,6 +135,12 @@ function startUpdates() {
     // Never fatal. A launcher that will not start because GitHub is having a
     // bad morning is worse than a launcher on last week's build.
     updateSay('error', { message: String(err && err.message ? err.message : err) });
+    // One retry, a few minutes on - a flaky connection at startup used to
+    // mean no update until the next restart.
+    if (!retryTimer) {
+      retryTimer = setTimeout(() => { retryTimer = null; lastUpdateCheck = 0; checkForUpdate('retry'); },
+                              5 * 60 * 1000);
+    }
   });
 
   autoUpdater.on('update-downloaded', (i) => {
@@ -123,8 +152,53 @@ function startUpdates() {
     installUpdate();
   });
 
+  // THE CHECK USED TO HAPPEN ONCE, at startup, and never again. A launcher
+  // left open all evening - hidden behind the game, shown again when it
+  // closes - never heard about a release that went out after it started, so
+  // the only way to get one was Settings > Check now. It now asks:
+  //   - when the page has loaded (so the Settings row shows the answer),
+  //   - every 30 minutes while it is open,
+  //   - every time a game closes (the launcher is being looked at again),
+  //   - when somebody opens it a second time,
+  //   - 5 minutes after a failed check, once.
+  autoUpdater.logger = updateLog;
+  win?.webContents.once('did-finish-load', () => checkForUpdate('start'));
+  setTimeout(() => checkForUpdate('start-fallback'), 15000);
+  setInterval(() => checkForUpdate('timer'), 30 * 60 * 1000);
+}
+
+let lastUpdateCheck = 0;
+let retryTimer = null;
+
+/* Throttled to one real request a minute, whoever asks. */
+function checkForUpdate(why) {
+  if (!app.isPackaged || updateWaiting) return;
+  if (Date.now() - lastUpdateCheck < 60 * 1000) return;
+  lastUpdateCheck = Date.now();
+  updateLog.info(`check (${why})`);
   autoUpdater.checkForUpdates().catch(() => { /* the error handler already said so */ });
 }
+
+/*
+ * What the updater did, in userData/updater.log. "It didn't update" is not
+ * something anybody can debug from a screenshot; this says whether it asked,
+ * what GitHub answered and why a download failed. Nothing secret goes through
+ * electron-updater - the feed is a public release. Capped at 256 KB.
+ */
+const UPDATE_LOG = path.join(app.getPath('userData'), 'updater.log');
+function updateLine(level, args) {
+  try {
+    try { if (fs.statSync(UPDATE_LOG).size > 256 * 1024) fs.writeFileSync(UPDATE_LOG, ''); } catch { /* no file yet */ }
+    const text = args.map((a) => (a instanceof Error ? a.message : typeof a === 'string' ? a : JSON.stringify(a))).join(' ');
+    fs.appendFileSync(UPDATE_LOG, `${new Date().toISOString()} ${level} ${text}\n`);
+  } catch { /* logging must never break updating */ }
+}
+const updateLog = {
+  info:  (...a) => updateLine('info', a),
+  warn:  (...a) => updateLine('warn', a),
+  error: (...a) => updateLine('error', a),
+  debug: () => {}
+};
 
 /* Set once an update has downloaded; cleared only by the restart itself. */
 let updateWaiting = '';
@@ -144,6 +218,8 @@ function installUpdate() {
 ipcMain.handle('update-check', async () => {
   if (!app.isPackaged) return { ok: false, reason: 'dev' };
   try {
+    lastUpdateCheck = Date.now();
+    updateLog.info('check (button)');
     const r = await autoUpdater.checkForUpdates();
     return { ok: true, version: r?.updateInfo?.version || '' };
   } catch (e) {
@@ -290,7 +366,16 @@ const DEFAULTS = {
   gameDir: '',           // empty = our own folder, see defaultGameDir()
   code: '',
   closeOnLaunch: true,
+  // Bring the launcher back when the game closes (only matters with
+  // closeOnLaunch - otherwise it never went away).
+  reopenOnClose: true,
   keepLogs: false,
+  // The game window. 0 x 0 means "whatever Minecraft picks" (854x480).
+  windowWidth: 0,
+  windowHeight: 0,
+  fullscreen: false,
+  // profile id -> when it was last launched. Written by main only.
+  lastPlayed: {},
   // Which version of the Terms this player agreed to. See TERMS_VERSION.
   termsAccepted: ''
 };
@@ -377,7 +462,16 @@ ipcMain.handle('settings-write', async (_e, patch) => {
       .filter((s) => /^[a-z0-9.\-]+(:\d{1,5})?$/.test(s.ip));
   }
   next.closeOnLaunch = !!next.closeOnLaunch;
+  next.reopenOnClose = !!next.reopenOnClose;
   next.keepLogs = !!next.keepLogs;
+  next.fullscreen = !!next.fullscreen;
+  // A window size is both or neither, and inside what a screen can be. These
+  // end up as --width/--height on the game's command line.
+  const w = Math.round(Number(next.windowWidth) || 0), h = Math.round(Number(next.windowHeight) || 0);
+  if (w >= 640 && w <= 7680 && h >= 480 && h <= 4320) { next.windowWidth = w; next.windowHeight = h; }
+  else { next.windowWidth = 0; next.windowHeight = 0; }
+  // Only main writes this; whatever the renderer sent is put back.
+  next.lastPlayed = current.lastPlayed && typeof current.lastPlayed === 'object' ? current.lastPlayed : {};
   for (const k of ['javaPath', 'gameDir', 'code']) next[k] = String(next[k] || '').trim();
   // Only ever the current version or nothing - the renderer cannot claim
   // agreement to some other text.
@@ -411,8 +505,51 @@ ipcMain.handle('show-folder', async (_e, dir) => {
   // Made on demand rather than at startup: a launcher that creates folders
   // just for being opened is a launcher that litters.
   try { fs.mkdirSync(target, { recursive: true }); } catch { /* shown anyway */ }
+  return openFolder(target);
+});
+
+/*
+ * FOLDERS ONLY. shell.openPath() on a FILE runs it - an .exe, a .bat, a
+ * shortcut - and the path came from the renderer, which draws text from the
+ * database. Anything that is not a directory is refused.
+ */
+function openFolder(target) {
+  try {
+    if (!fs.statSync(target).isDirectory()) return false;
+  } catch { return false; }
   shell.openPath(target);
   return true;
+}
+
+/*
+ * Named places, so Settings can have "Open logs" and "Open screenshots" without
+ * the renderer ever building a path. Created on demand.
+ */
+ipcMain.handle('open-place', async (_e, name, profileId) => {
+  const s = readSettings();
+  // A profile id is only used if it is one of ours - it becomes a path.
+  const which = s.profiles.find((p) => p.id === profileId) || activeProfile(s);
+  const places = {
+    game:        s.gameDir || defaultGameDir(),
+    profile:     profileDir(s, which),
+    mods:        path.join(profileDir(s), 'mods'),
+    logs:        path.join(profileDir(s), 'logs'),
+    screenshots: path.join(profileDir(s), 'screenshots'),
+    launcher:    app.getPath('userData')
+  };
+  const target = places[String(name)];
+  if (!target) return false;
+  try { fs.mkdirSync(target, { recursive: true }); } catch { /* opened anyway */ }
+  return openFolder(target);
+});
+
+/* Start with Windows. The OS keeps this, not settings.json, so it is read
+   back from the OS every time rather than remembered. Packaged builds only -
+   in dev it would register electron.exe. */
+ipcMain.handle('login-item', async (_e, on) => {
+  if (!app.isPackaged) return { ok: false, reason: 'dev', on: false };
+  if (typeof on === 'boolean') app.setLoginItemSettings({ openAtLogin: on });
+  return { ok: true, on: !!app.getLoginItemSettings().openAtLogin };
 });
 
 // ---- server list ping ----------------------------------------------------
@@ -758,7 +895,18 @@ ipcMain.handle('profiles', async () => {
       mods = fs.readdirSync(path.join(profileDir(s, p), 'mods'))
                .filter((f) => /\.jar$/i.test(f)).length;
     } catch { /* never launched this one yet */ }
-    return { ...p, mods, active: p.id === s.activeProfile };
+    // Which Pink Pony build is in THIS profile's folder, from the file name
+    // the launcher itself gave it (PinkPony-<version>-<mc>.jar). Read here so
+    // the Profiles page can say what every version has, not just the active one.
+    let client = '';
+    try {
+      const f = fs.readdirSync(path.join(profileDir(s, p), 'mods'))
+        .find((x) => /^pinkpony-.+-.+\.jar$/i.test(x));
+      const m = f && f.match(/^pinkpony-(.+)-[^-]+\.jar$/i);
+      client = m ? m[1] : '';
+    } catch { /* never launched */ }
+    return { ...p, mods, client, lastPlayed: Number(s.lastPlayed?.[p.id]) || 0,
+             active: p.id === s.activeProfile };
   });
 });
 
@@ -1048,6 +1196,35 @@ ipcMain.handle('mods-folder', async () => {
   try { fs.mkdirSync(dir, { recursive: true }); } catch { /* fine */ }
   shell.openPath(dir);
   return dir;
+});
+
+/*
+ * Jars dragged onto the Profiles page. The renderer only has the paths the OS
+ * gave the drop (webUtils.getPathForFile in preload); each one is checked to
+ * be an existing .jar file of a sane size before it is COPIED - never moved -
+ * into this profile's mods folder. A name that is already there is skipped
+ * rather than overwritten.
+ */
+ipcMain.handle('mods-add', async (_e, paths) => {
+  const dir = path.join(profileDir(), 'mods');
+  fs.mkdirSync(dir, { recursive: true });
+  const out = { added: [], skipped: [] };
+  for (const src of (Array.isArray(paths) ? paths : []).slice(0, 50)) {
+    const name = path.basename(String(src || ''));
+    try {
+      if (!/\.jar$/i.test(name)) { out.skipped.push({ name, why: 'not a .jar' }); continue; }
+      const st = fs.statSync(src);
+      if (!st.isFile() || st.size > 200 * 1024 * 1024) { out.skipped.push({ name, why: 'not a mod file' }); continue; }
+      if (/^pinkpony/i.test(name)) { out.skipped.push({ name, why: 'the launcher installs Pink Pony itself' }); continue; }
+      const dest = path.join(dir, name);
+      if (fs.existsSync(dest)) { out.skipped.push({ name, why: 'already there' }); continue; }
+      fs.copyFileSync(src, dest, fs.constants.COPYFILE_EXCL);
+      out.added.push(name);
+    } catch (e) {
+      out.skipped.push({ name, why: 'could not copy' });
+    }
+  }
+  return out;
 });
 
 // ---- licence status ------------------------------------------------------
@@ -1942,6 +2119,17 @@ async function handleBridge(req, res, key) {
 
 ipcMain.handle('launch', async (_e, opts) => launchGame(opts));
 
+/* Remember when each profile was last played, for the Profiles page. */
+function markPlayed(id) {
+  try {
+    const cur = readSettings();
+    const next = { ...cur, lastPlayed: { ...(cur.lastPlayed || {}), [id]: Date.now() } };
+    const tmp = SETTINGS + '.tmp';
+    fs.writeFileSync(tmp, JSON.stringify(next, null, 2));
+    fs.renameSync(tmp, SETTINGS);
+  } catch { /* a missing timestamp is not worth failing a launch over */ }
+}
+
 async function launchGame(opts) {
   const settings = readSettings();
   const account = loadAccount();
@@ -2045,9 +2233,11 @@ async function launchGame(opts) {
       return;
     }
     // An update that arrived mid-game installs now that the game is gone.
+    // Otherwise ask again - the launcher is about to be looked at.
     if (updateWaiting) installUpdate();
+    else checkForUpdate('game-closed');
     say(100, code === 0 ? 'Closed' : `Game ${describeExit(code)}`, { done: true });
-    if (win && !win.isDestroyed() && settings.closeOnLaunch) win.show();
+    if (win && !win.isDestroyed() && settings.closeOnLaunch && settings.reopenOnClose !== false) win.show();
   });
 
   linkAccount(account).catch(() => {});
@@ -2071,12 +2261,20 @@ async function launchGame(opts) {
       // gameDirectory is what makes a profile a profile: the game writes its
       // mods, config and saves here while root keeps the shared downloads.
       overrides: { detached: false, gameDirectory: gameDir },
-      quickPlay: joinServer ? { type: 'multiplayer', identifier: joinServer } : undefined
+      quickPlay: joinServer ? { type: 'multiplayer', identifier: joinServer } : undefined,
+      // Settings > Game window, as Minecraft's own --fullscreen / --width /
+      // --height. NOT through MCLC's `window` option: in 3.17 its width and
+      // height branch is an arrow function that is never called, so a size
+      // set that way silently did nothing. Left out entirely when unset.
+      customLaunchArgs: settings.fullscreen ? ['--fullscreen']
+        : settings.windowWidth ? ['--width', String(settings.windowWidth), '--height', String(settings.windowHeight)]
+        : undefined
     });
   } catch (e) { gameRunning = false; throw e; }
   // No process means it never started, so there is nothing to wait to close.
   if (!child) gameRunning = false;
 
+  markPlayed(profile.id);
   addEvent('play', `Launched ${mcVersion}`,
            joinServer || profile.name);
   say(99, 'Launched');

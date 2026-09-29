@@ -6,7 +6,7 @@
  * internet, and a window with filesystem access that also renders remote
  * content is one bad string away from being somebody else's shell.
  */
-const { contextBridge, ipcRenderer } = require('electron');
+const { contextBridge, ipcRenderer, webUtils } = require('electron');
 
 contextBridge.exposeInMainWorld('pp', {
   win:          (what) => ipcRenderer.send('win', what),
@@ -56,6 +56,26 @@ contextBridge.exposeInMainWorld('pp', {
    * assert - see the note above its handler.
    */
   equip:        (kind, value) => ipcRenderer.invoke('cosmetics', 'equip', kind, value),
+
+  /*
+   * FRIENDS - THE SAME BUG AS EQUIP, A SECOND TIME.
+   *
+   * main.js has handled 'friends' all along; this bridge was missing, so
+   * window.pp.friends was undefined, loadFriends got undefined back and showed
+   * "Friends are unavailable right now" to everybody, however many friends
+   * they had in game. The grep in claude/launcher.md only checked one
+   * direction (bridge -> handler). Run both.
+   */
+  friends:      (action, target) => ipcRenderer.invoke('friends', action, target),
+
+  // Settings: named folders (never a path from the page), Start with Windows.
+  openPlace:    (name, profileId) => ipcRenderer.invoke('open-place', name, profileId),
+  loginItem:    (on) => ipcRenderer.invoke('login-item', on),
+
+  // Jars dropped on the Profiles page. Electron 32 has no File.path; the OS
+  // path of a dropped file comes from webUtils, here, and main checks it.
+  addMods:      (files) => ipcRenderer.invoke('mods-add',
+                  Array.from(files || []).map((f) => { try { return webUtils.getPathForFile(f); } catch { return ''; } })),
   appVersion:   () => ipcRenderer.invoke('app-version'),
 
   /*

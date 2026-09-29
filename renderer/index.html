@@ -50,9 +50,7 @@
   <nav class="side">
     <button class="nav on" data-page="home"><svg viewBox="0 0 24 24"><path d="M3 11l9-8 9 8"/><path d="M5 10v10h14V10"/></svg>HOME</button>
     <button class="nav" data-page="profiles"><svg viewBox="0 0 24 24"><path d="M4 7l8-4 8 4-8 4z"/><path d="M4 12l8 4 8-4"/><path d="M4 17l8 4 8-4"/></svg>PROFILES</button>
-    <button class="nav" data-page="mods"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M12 4v3M12 17v3M4 12h3M17 12h3M6.5 6.5l2 2M15.5 15.5l2 2M17.5 6.5l-2 2M8.5 15.5l-2 2"/></svg>MODULES</button>
     <button class="nav" data-page="cosmetics"><svg viewBox="0 0 24 24"><path d="M8 4l4 2 4-2 4 3-3 3v10H7V10L4 7z"/></svg>COSMETICS</button>
-    <button class="nav" data-page="servers"><svg viewBox="0 0 24 24"><ellipse cx="12" cy="6" rx="8" ry="3"/><path d="M4 6v6c0 1.7 3.6 3 8 3s8-1.3 8-3V6"/><path d="M4 12v6c0 1.7 3.6 3 8 3s8-1.3 8-3v-6"/></svg>SERVERS</button>
     
     <button class="nav" data-page="settings"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.6 1.6 0 0 0 .3 1.8 2 2 0 1 1-2.8 2.8 1.6 1.6 0 0 0-1.8-.3 1.6 1.6 0 0 0-1 1.5 2 2 0 1 1-4 0 1.6 1.6 0 0 0-1-1.5 1.6 1.6 0 0 0-1.8.3 2 2 0 1 1-2.8-2.8 1.6 1.6 0 0 0 .3-1.8 1.6 1.6 0 0 0-1.5-1 2 2 0 1 1 0-4 1.6 1.6 0 0 0 1.5-1 1.6 1.6 0 0 0-.3-1.8 2 2 0 1 1 2.8-2.8 1.6 1.6 0 0 0 1.8.3 1.6 1.6 0 0 0 1-1.5 2 2 0 1 1 4 0 1.6 1.6 0 0 0 1 1.5 1.6 1.6 0 0 0 1.8-.3 2 2 0 1 1 2.8 2.8 1.6 1.6 0 0 0-.3 1.8 1.6 1.6 0 0 0 1.5 1 2 2 0 1 1 0 4 1.6 1.6 0 0 0-1.5 1z"/></svg>SETTINGS</button>
 
@@ -72,7 +70,7 @@
       <a href="#" title="YouTube"><svg viewBox="0 0 24 24"><rect x="2" y="6" width="20" height="12" rx="4"/><path d="M10 9.5l5 2.5-5 2.5z"/></svg></a>
       <a href="#" title="TikTok"><svg viewBox="0 0 24 24"><path d="M14 4v9a4 4 0 1 1-3-3.9"/><path d="M14 6a5 5 0 0 0 5 4"/></svg></a>
     </div>
-    <p class="sidever" id="sideVer">v1.21.1</p>
+    <p class="sidever" id="sideVer"></p>
   </nav>
 
   <main class="main">
@@ -152,19 +150,7 @@
       <div class="servers" id="servers"></div>
     </section>
 
-    <section class="page" data-page="mods">
-      <div class="modtop">
-        <div class="sechead"><h2><i class="bul"></i>MODULES</h2></div>
-        <label class="search">
-          <svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="6"/><path d="M20 20l-4.3-4.3"/></svg>
-          <input id="modSearch" type="text" placeholder="Search modules" spellcheck="false">
-        </label>
-        <span class="modcount" id="modCount"></span>
-      </div>
-      <div class="cats" id="modCats"></div>
-      <div class="mods" id="mods"></div>
 
-    </section>
     <!-- ============================================================
          PROFILES.
 
@@ -175,75 +161,147 @@
          hide exactly the connection it needs to teach.
          ============================================================ -->
     <section class="page" data-page="profiles">
-      <div class="sechead"><h2><i class="bul"></i>PROFILES</h2></div>
-      <p class="setnote dim">Each version keeps its own mods, config and worlds. Pick one to play it.</p>
-      <div class="vergrid" id="verGrid"></div>
+      <div class="pagehead">
+        <div><h1>Profiles</h1>
+          <p>Every version keeps its own mods, settings and worlds. Pick one and play.</p></div>
+      </div>
+
+      <div class="profgrid" id="verGrid"></div>
       <div class="verpicks" id="verPicks" hidden></div>
 
-      <div class="sechead mt"><h2><i class="bul"></i>MODS IN <span id="modsFor">DEFAULT</span></h2>
-        <span class="grow"></span>
-        <button class="ghost" id="modsFolder">Open folder</button>
-        <button class="ghost" id="modsRescan">Rescan</button>
+      <div class="modpanel" id="modPanel">
+        <div class="modpanelhead">
+          <div class="mphtext">
+            <h2>Mods in <span id="modsFor">26.3</span> <em id="modsCount"></em></h2>
+            <p id="modsHint">Drop a .jar from Modrinth or CurseForge here, or into the folder.</p>
+          </div>
+          <span class="grow"></span>
+          <button class="ghost" id="modsFolder"><svg viewBox="0 0 24 24"><path d="M3 7h6l2 2h10v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg>Open folder</button>
+          <button class="ghost" id="modsRescan"><svg viewBox="0 0 24 24"><path d="M20 11a8 8 0 1 0-2.3 5.7"/><path d="M20 5v6h-6"/></svg>Rescan</button>
+        </div>
+        <div class="jarlist" id="jarList"></div>
+        <div class="dropzone" id="dropZone">
+          <svg viewBox="0 0 24 24"><path d="M12 4v11"/><path d="M7 10l5 5 5-5"/><path d="M4 19h16"/></svg>
+          <span>Drop <b>.jar</b> files anywhere on this page to add them to <b id="dropFor">26.3</b></span>
+        </div>
       </div>
-      <p class="setnote dim" id="modsHint">Drop a jar from Modrinth or CurseForge into the folder and rescan.</p>
-      <div class="srvlist" id="jarList"></div>
     </section>
 
     <section class="page" data-page="cosmetics">
-      <div class="modtop">
-        <div class="sechead"><h2><i class="bul"></i>COSMETICS</h2></div>
-        <label class="search">
-          <svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="6"/><path d="M20 20l-4.3-4.3"/></svg>
-          <input id="cosSearch" type="text" placeholder="Search cosmetics" spellcheck="false">
-        </label>
-        <span class="modcount" id="cosCount"></span>
+      <div class="wdrobe">
+        <!-- The preview: you, in 3D, wearing what is on - or what you are
+             trying on. Nothing here is equipped until you press EQUIP. -->
+        <div class="stagecol">
+          <div class="stage" id="cosStage">
+            <canvas id="cosCanvas"></canvas>
+            <img class="flatbody" id="cosFlat" alt="" hidden>
+            <div class="nt" id="cosNt"><span class="nttag" id="cosNtTag"></span><span class="ntname" id="cosNtName">Steve</span></div>
+            <div class="stagectl" id="cosCtl">
+              <button data-turn title="Turn around"><svg viewBox="0 0 24 24"><path d="M4 12a8 8 0 0 1 14-5.3"/><path d="M18 3v4h-4"/><path d="M20 12a8 8 0 0 1-14 5.3"/><path d="M6 21v-4h4"/></svg></button>
+              <button data-spin aria-pressed="false" title="Spin"><svg viewBox="0 0 24 24"><ellipse cx="12" cy="12" rx="9" ry="4"/><path d="M12 3v18"/></svg></button>
+              <button data-anim="walk" aria-pressed="true" title="Walk"><svg viewBox="0 0 24 24"><circle cx="13" cy="4" r="2"/><path d="M9 21l3-7 3 3v4M10 10l3-3 3 3 3 1M12 14l-3-4"/></svg></button>
+            </div>
+            <div class="trybar" id="tryBar" hidden>
+              <span class="trytext">Trying on <b id="tryName"></b></span>
+              <button class="solid small" id="tryAct">EQUIP</button>
+              <button class="ghost tiny" id="tryReset">Back</button>
+            </div>
+          </div>
+          <div class="slots">
+            <div class="slot" id="slotCape"><span class="slotart" id="slotCapeArt"></span>
+              <span class="slotmeta"><i>CAPE</i><b id="slotCapeName">None</b></span>
+              <button class="ghost tiny" id="slotCapeOff" hidden>Remove</button></div>
+            <div class="slot" id="slotTag"><span class="slotart tagslot" id="slotTagArt"></span>
+              <span class="slotmeta"><i>TAG</i><b id="slotTagName">None</b></span>
+              <button class="ghost tiny" id="slotTagOff" hidden>Remove</button></div>
+          </div>
+        </div>
+
+        <div class="cosside">
+          <div class="modtop">
+            <h1 class="ptitle">Cosmetics</h1>
+            <label class="search">
+              <svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="6"/><path d="M20 20l-4.3-4.3"/></svg>
+              <input id="cosSearch" type="text" placeholder="Search cosmetics" spellcheck="false">
+            </label>
+            <span class="modcount" id="cosCount"></span>
+          </div>
+          <div class="cats" id="cosCats"></div>
+          <p class="setnote" id="cosPageNote"></p>
+          <div id="cosGrid"></div>
+        </div>
       </div>
-      <p class="setnote" id="cosPageNote"></p>
-      <div class="cats" id="cosCats"></div>
-      <div class="cosgrid" id="cosGrid"></div>
     </section>
 
-    <section class="page" data-page="servers">
-      <div class="modtop">
-        <div class="sechead"><h2><i class="bul"></i>SERVERS</h2></div>
-        <button class="ghost" id="srvRefresh">Refresh</button>
-        <span class="modcount" id="srvCount"></span>
-      </div>
-      <div class="srvlist" id="srvList"></div>
 
-    </section>
 
     
 
     <section class="page" data-page="settings">
-      <div class="sechead"><h2><i class="bul"></i>SETTINGS</h2></div>
+      <div class="pagehead">
+        <div><h1>Settings</h1><p>Everything saves as soon as you change it.</p></div>
+        <p class="setnote" id="setNote"></p>
+      </div>
 
+      <div class="setcols">
       <div class="setgroup">
-        <h3>GAME</h3>
+        <h3><svg viewBox="0 0 24 24"><rect x="3" y="6" width="18" height="12" rx="3"/><path d="M8 12h3M9.5 10.5v3M15 11h.01M17 13h.01"/></svg>GAME</h3>
+
+        <div class="setrow col">
+          <div class="setmeta"><b>Memory <span class="memhint" id="memHint"></span></b><i>How much RAM Minecraft may use. 4-8 GB suits almost everyone; more is not faster.</i></div>
+          <div class="memrow">
+            <input id="memRange" class="range wide" type="range" min="1024" max="16384" step="512">
+            <span class="setval" id="memVal">4 GB</span>
+          </div>
+          <div class="memscale"><span id="memMin">1 GB</span><span class="memrec" id="memRec"></span><span id="memMax">16 GB</span></div>
+        </div>
 
         <div class="setrow">
-          <div class="setmeta"><b>Memory</b><i>How much RAM the game may use. More is not always faster.</i></div>
+          <div class="setmeta"><b>Window size</b><i>How big the game window opens.</i></div>
           <div class="setctl">
-            <input id="memRange" class="range" type="range" min="1024" max="16384" step="512">
-            <span class="setval" id="memVal">4 GB</span>
+            <select id="winSize" class="textbox pick">
+              <option value="0x0">Minecraft default</option>
+              <option value="1280x720">1280 × 720</option>
+              <option value="1600x900">1600 × 900</option>
+              <option value="1920x1080">1920 × 1080</option>
+              <option value="2560x1440">2560 × 1440</option>
+            </select>
           </div>
         </div>
 
         <div class="setrow">
-          <div class="setmeta"><b>Java</b><i>Leave empty to let the launcher find one.</i></div>
+          <div class="setmeta"><b>Start in fullscreen</b><i>F11 still switches in game.</i></div>
+          <div class="setctl"><button class="sw2" id="fullscreen" aria-pressed="false"></button></div>
+        </div>
+
+        <div class="setrow">
+          <div class="setmeta"><b>Java</b><i>Leave on Automatic - the launcher picks the right Java for each version.</i></div>
           <div class="setctl">
             <span class="pathbox" id="javaPath">Automatic</span>
             <button class="ghost" data-pick="javaPath">Choose</button>
-            <button class="ghost" data-clear="javaPath">Clear</button>
+            <button class="ghost" data-clear="javaPath">Reset</button>
           </div>
         </div>
+      </div>
+
+      <div class="setgroup">
+        <h3><svg viewBox="0 0 24 24"><path d="M3 7h6l2 2h10v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg>FILES</h3>
 
         <div class="setrow">
           <div class="setmeta"><b>Game folder</b><i>Pink Pony keeps its own install, away from .minecraft.</i></div>
           <div class="setctl">
             <span class="pathbox" id="gameDir">.pinkpony</span>
             <button class="ghost" data-pick="gameDir">Choose</button>
-            <button class="ghost" data-open="gameDir">Open</button>
+          </div>
+        </div>
+
+        <div class="setrow">
+          <div class="setmeta"><b>Open a folder</b><i>For the version you have selected (<span id="placeFor">26.3</span>).</i></div>
+          <div class="setctl">
+            <button class="ghost" data-place="profile">Game</button>
+            <button class="ghost" data-place="mods">Mods</button>
+            <button class="ghost" data-place="screenshots">Screenshots</button>
+            <button class="ghost" data-place="logs">Logs</button>
           </div>
         </div>
 
@@ -257,7 +315,7 @@
       </div>
 
       <div class="setgroup">
-        <h3>ACCOUNT</h3>
+        <h3><svg viewBox="0 0 24 24"><circle cx="12" cy="8" r="4"/><path d="M4 21a8 8 0 0 1 16 0"/></svg>ACCOUNT</h3>
 
         <div class="setrow">
           <div class="setmeta"><b>Access code</b><i>The code from <b>/generate</b> in the Discord.</i></div>
@@ -268,49 +326,67 @@
             <button class="ghost" id="codeSave">Save</button>
           </div>
         </div>
+
+        <div class="setrow col">
+          <div class="setmeta"><b>Minecraft accounts</b><i>The highlighted one plays when you press LAUNCH.</i></div>
+          <div class="acclist" id="setAccounts"></div>
+        </div>
       </div>
 
       <div class="setgroup">
-        <h3>LAUNCHER</h3>
+        <h3><svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="14" rx="2"/><path d="M8 21h8M12 18v3"/></svg>LAUNCHER</h3>
 
         <div class="setrow">
-          <div class="setmeta"><b>Close on launch</b><i>Hide the launcher once the game starts.</i></div>
+          <div class="setmeta"><b>Hide when the game starts</b><i>The launcher gets out of the way while you play.</i></div>
           <div class="setctl"><button class="sw2" id="closeOnLaunch" aria-pressed="false"></button></div>
+        </div>
+
+        <div class="setrow" id="reopenRow">
+          <div class="setmeta"><b>Come back when the game closes</b><i>Off: it stays hidden until you open it again.</i></div>
+          <div class="setctl"><button class="sw2" id="reopenOnClose" aria-pressed="true"></button></div>
+        </div>
+
+        <div class="setrow">
+          <div class="setmeta"><b>Start with Windows</b><i>Open the launcher when you sign in to your PC.</i></div>
+          <div class="setctl"><button class="sw2" id="loginItem" aria-pressed="false"></button></div>
         </div>
 
         <div class="setrow">
           <div class="setmeta"><b>Keep logs</b><i>Write the game's output to a file. Useful when something breaks.</i></div>
           <div class="setctl"><button class="sw2" id="keepLogs" aria-pressed="false"></button></div>
         </div>
+      </div>
+
+      <div class="setgroup span2">
+        <h3><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 8h.01M11 12h1v5h1"/></svg>ABOUT</h3>
 
         <!-- Filled by app.js from the PACKAGED version, so it cannot disagree
-             with what the updater compares against. Empty here on purpose: a
-             number typed into markup is true on the day it is written and
-             wrong every day after. -->
+             with what the updater compares against. -->
+        <div class="setrow">
+          <div class="setmeta"><b>Launcher <span class="setval inline" id="appVersion">&mdash;</span></b><i id="updState">Checking for updates&hellip;</i></div>
+          <div class="setctl">
+            <button class="ghost" id="updCheck">Check now</button>
+            <button class="solid small" id="updInstall" hidden>Restart</button>
+            <button class="ghost" data-place="launcher" title="The launcher's own files, including updater.log">Launcher files</button>
+          </div>
+        </div>
+
+        <div class="setrow">
+          <div class="setmeta"><b>Patch notes</b><i>Everything that changed in every Pink Pony release.</i></div>
+          <div class="setctl"><button class="ghost" id="notesOpen">Open</button></div>
+        </div>
+
         <div class="setrow">
           <div class="setmeta"><b>Terms of Service</b><i id="termsNote">What you agreed to when you started using Pink Pony.</i></div>
           <div class="setctl"><button class="ghost" id="termsOpen">Read</button></div>
         </div>
 
         <div class="setrow">
-          <div class="setmeta"><b>Version</b><i>Which build of the launcher this is.</i></div>
-          <div class="setctl"><span class="setval" id="appVersion">&mdash;</span></div>
-        </div>
-
-        <!-- The status line is filled by main.js as it checks and downloads,
-             so the row says what is happening rather than sitting there. The
-             restart button only appears once there is something to restart
-             INTO. -->
-        <div class="setrow">
-          <div class="setmeta"><b>Updates</b><i id="updState">Checking for updates&hellip;</i></div>
-          <div class="setctl">
-            <button class="ghost" id="updCheck">Check now</button>
-            <button class="solid small" id="updInstall" hidden>Restart</button>
-          </div>
+          <div class="setmeta"><b>Help</b><i>Stuck? Ask in the Discord - send the logs if something crashed.</i></div>
+          <div class="setctl"><button class="ghost" id="helpOpen">Discord</button></div>
         </div>
       </div>
-
-      <p class="setnote" id="setNote"></p>
+      </div>
     </section>
   </main>
 
@@ -378,6 +454,7 @@
   </div>
 </div>
 
+<script src="vendor/skinview3d.bundle.js"></script>
 <script src="app.js"></script>
 </body>
 </html>
