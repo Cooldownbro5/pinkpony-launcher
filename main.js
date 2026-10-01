@@ -1054,6 +1054,66 @@ function carryIfNew(settings, profile) {
 
 let gameRunning = false;
 
+/*
+ * ONE SERVER LIST FOR EVERY VERSION (1.2.8).
+ *
+ * Each profile is its own game folder, so each had its own servers.dat - add
+ * a server on 26.3 and it was not there on 1.21.1. Now there is one shared
+ * copy in the root of the Pink Pony folder: it goes into a profile before
+ * that profile launches (if it is newer), and comes back out when the game
+ * closes (if the game changed it). The file format is the same on both
+ * versions. Featured servers are never in it - the client keeps them out.
+ *
+ * The first time, the newest servers.dat from any profile becomes the shared
+ * one, so nobody loses the list they already have.
+ */
+function sharedServersPath(settings) {
+  return path.join(settings.gameDir || defaultGameDir(), 'servers.shared.dat');
+}
+
+function mtime(file) {
+  try { return fs.statSync(file).mtimeMs; } catch { return 0; }
+}
+
+function serversIn(settings, profile) {
+  const dir = profileDir(settings, profile);
+  fs.mkdirSync(dir, { recursive: true });
+  const shared = sharedServersPath(settings);
+  const mine = path.join(dir, 'servers.dat');
+  try {
+    if (!fs.existsSync(shared)) {
+      // Seed from the newest list any profile already has.
+      let best = '', bestAt = 0;
+      for (const p of settings.profiles) {
+        const f = path.join(profileDir(settings, p), 'servers.dat');
+        const t = mtime(f);
+        if (t > bestAt) { best = f; bestAt = t; }
+      }
+      if (best) fs.copyFileSync(best, shared);
+    }
+    if (fs.existsSync(shared) && mtime(shared) > mtime(mine)) {
+      fs.copyFileSync(shared, mine);
+      // Same timestamp both sides, so "did the game change it" is a plain compare.
+      const t = new Date(mtime(shared));
+      fs.utimesSync(mine, t, t);
+    }
+  } catch (e) {
+    // The game starts with whatever list this profile had. Never a failed launch.
+    console.warn('shared servers in:', e?.message || e);
+  }
+  return mtime(mine);
+}
+
+function serversOut(settings, profile, before) {
+  try {
+    const mine = path.join(profileDir(settings, profile), 'servers.dat');
+    const t = mtime(mine);
+    if (t && t !== before) fs.copyFileSync(mine, sharedServersPath(settings));
+  } catch (e) {
+    console.warn('shared servers out:', e?.message || e);
+  }
+}
+
 /* The Settings button: copy from `fromId` into the profile being played now. */
 ipcMain.handle('profile-copy', async (_e, fromId) => {
   if (gameRunning) {
@@ -2164,6 +2224,7 @@ async function launchGame(opts) {
   await ensureFabricApi(modsDir, mcVersion);
   const java = await ensureJava(root, mcVersion, settings.javaPath);
   carryIfNew(settings, profile);
+  const serversAt = serversIn(settings, profile);
   seedCode(gameDir, settings.code);
   takeSwitchRequest(gameDir);            // a leftover from a crash must not fire later
   writeAccountsFile(gameDir);
@@ -2208,6 +2269,7 @@ async function launchGame(opts) {
   });
   launcher.on('close', (code) => {
     gameRunning = false;
+    serversOut(settings, profile, serversAt);
     // Written into the same log as the game's output, so a session that ends
     // without "Stopping!" says how it ended instead of just stopping.
     if (settings.keepLogs) {

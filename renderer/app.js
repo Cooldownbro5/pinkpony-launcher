@@ -2258,6 +2258,18 @@ loadFeatured();
     pill.textContent = t;
   };
 
+  /* One line, not electron-updater's whole HTTP dump (headers and a stack
+     trace filled the Settings page). The full text is in updater.log -
+     Settings > About > Launcher files. The usual cause is a release whose
+     files are still uploading; the launcher retries by itself. */
+  const updateError = (m) => {
+    const t = String(m || '');
+    if (/latest\.yml|404/i.test(t)) return 'The new version is still being published. Trying again in a few minutes.';
+    if (/ENOTFOUND|ETIMEDOUT|ECONNRESET|net::|network/i.test(t)) return "Couldn't reach GitHub. Trying again in a few minutes.";
+    const first = t.split(/\n|\. /)[0].slice(0, 140);
+    return `Couldn't check for updates: ${first}`;
+  };
+
   window.pp?.onUpdate?.((s) => {
     switch (s?.state) {
       case 'dev':         say('Updates are off in a dev build.'); if (check) check.disabled = true; break;
@@ -2282,7 +2294,7 @@ loadFeatured();
         toast('');
         // The reason goes on screen. "Update failed" with no cause is the
         // kind of message that gets three rounds of guessing.
-        say(`Couldn't check for updates: ${s.message}`);
+        say(updateError(s.message));
         break;
       default: break;
     }
