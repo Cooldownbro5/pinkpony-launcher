@@ -719,11 +719,13 @@ async function rest(path) {
 const art = (file) =>
   `${SB}/storage/v1/object/public/cosmetics/${encodeURIComponent(file)}`;
 
-/* ANIMATED CAPES (client 2.64.1). A cape file that is several 2:1 sheets
-   stacked on top of each other (512 wide, 256 x frames tall) is an animation,
-   played top to bottom at 100 ms a frame, or "_80ms" at the end of the name.
-   Same rule as the game. scan() keeps every cape swatch on the right frame;
-   cape3d() hands the 3D model one frame at a time. A normal cape is untouched. */
+/* ANIMATED CAPES (client 2.64.1; smooth since 2.64.9). A cape file that is
+   several 2:1 sheets stacked on top of each other (512 or 1024 wide, frames
+   tall) is an animation, played top to bottom at 100 ms a frame, or "_80ms" at
+   the end of the name. Same rule as the game - and like the game, each frame
+   fades into the next, so 16 frames move as smoothly as 60.
+   scan() finds cape swatches; cape3d() animates the 3D model. A normal cape is
+   left exactly as it was. */
 const CapeAnim = (() => {
   const SEL = ".capepanel, [data-cape]";
   const still = matchMedia("(prefers-reduced-motion: reduce)").matches;
@@ -742,33 +744,62 @@ const CapeAnim = (() => {
     }));
     return seen.get(url);
   }
-  const frameAt = (a) => still ? 0 : Math.floor(Date.now() / a.ms) % a.n;
+  /* This frame, the next one, and how far towards it (0..1). */
+  const at = (a) => {
+    if (still) return { k: 0, k2: 0, f: 0 };
+    const now = Date.now(), k = Math.floor(now / a.ms) % a.n;
+    return { k, k2: (k + 1) % a.n, f: (now % a.ms) / a.ms };
+  };
   const urlOf = (el) => { const m = /url\(["']?(.*?)["']?\)/.exec(el.style.backgroundImage || ""); return m ? m[1] : null; };
+  /* background-position % is a share of the LEFTOVER space: frame k's outside panel. */
+  const posY = (k, n) => ((2 * k + 1 / 16) / (2 * n - 1) * 100) + "%";
   const live = new Set();
   function scan() {
     document.querySelectorAll(SEL).forEach((el) => {
+      if (el.classList.contains("cape-next")) return;
       const u = urlOf(el);
       if (!u || el._capeUrl === u) return;
-      if (el._cape) { el.style.backgroundSize = el._capeSize; el.style.backgroundPositionY = el._capeY; el._cape = null; }
+      if (el._cape) {
+        el.style.backgroundSize = el._capeSize; el.style.backgroundPositionY = el._capeY;
+        if (el._capeNext) { el._capeNext.remove(); el._capeNext = null; }
+        el._cape = null;
+      }
       el._capeUrl = u;
       info(u).then((a) => {
         if (!a || a.n < 2 || el._capeUrl !== u) return;
         el._capeSize = el.style.backgroundSize; el._capeY = el.style.backgroundPositionY;
         el._cape = a;
         el.style.backgroundSize = `640% ${200 * a.n}%`;
+        if (!still) {
+          // The next frame, laid over this one and faded in.
+          if (getComputedStyle(el).position === "static") el.style.position = "relative";
+          const nx = document.createElement("i");
+          nx.className = "cape-next";
+          nx.style.cssText = "position:absolute;inset:0;pointer-events:none;border-radius:inherit;opacity:0;"
+            + `background-image:url("${u}");background-size:640% ${200 * a.n}%;`
+            + `background-position-x:${getComputedStyle(el).backgroundPositionX};image-rendering:inherit`;
+          el.appendChild(nx);
+          el._capeNext = nx;
+        }
         live.add(el);
         paint(el);
       });
     });
-    live.forEach(paint);
   }
   function paint(el) {
     if (!el.isConnected || !el._cape) { live.delete(el); return; }
-    const a = el._cape, k = frameAt(a);
-    /* the outside panel of frame k: background-position % is a share of the leftover space */
-    el.style.backgroundPositionY = ((2 * k + 1 / 16) / (2 * a.n - 1) * 100) + "%";
+    const a = el._cape, t = at(a);
+    el.style.backgroundPositionY = posY(t.k, a.n);
+    if (el._capeNext) {
+      el._capeNext.style.backgroundPositionY = posY(t.k2, a.n);
+      el._capeNext.style.opacity = t.f.toFixed(3);
+    }
   }
-  setInterval(scan, 50);
+  setInterval(scan, 200);
+  scan();
+  const loop = () => { live.forEach(paint); requestAnimationFrame(loop); };
+  requestAnimationFrame(loop);
+
   let tok = 0;
   /* Put a cape on a skinview3d model. Resolves like viewer.loadCape(url). */
   function cape3d(viewer, url) {
@@ -778,19 +809,41 @@ const CapeAnim = (() => {
       if (!a || a.n < 2) return viewer.loadCape(url);
       const c = document.createElement("canvas"); c.width = a.w; c.height = a.fh;
       const g = c.getContext("2d");
-      let last = -1;
-      const step = () => {
+      const draw = () => {
+        const t = at(a);
+        g.clearRect(0, 0, a.w, a.fh);
+        g.globalAlpha = 1;
+        g.drawImage(a.img, 0, t.k * a.fh, a.w, a.fh, 0, 0, a.w, a.fh);
+        if (t.f > 0.01) {
+          g.globalAlpha = t.f;
+          g.drawImage(a.img, 0, t.k2 * a.fh, a.w, a.fh, 0, 0, a.w, a.fh);
+          g.globalAlpha = 1;
+        }
+      };
+      draw();
+      viewer.loadCape(c);
+      if (still) return;
+      // After the first load, update the model's own cape texture in place -
+      // about 30 times a second - rather than building a new one each time.
+      let last = 0;
+      const step = (now) => {
         if (me !== tok) return;
-        const k = frameAt(a);
-        if (k !== last) {
-          last = k;
-          g.clearRect(0, 0, a.w, a.fh);
-          g.drawImage(a.img, 0, k * a.fh, a.w, a.fh, 0, 0, a.w, a.fh);
-          viewer.loadCape(c);
+        if (now - last >= 33) {
+          last = now;
+          draw();
+          const cc = viewer.capeCanvas, tex = viewer.capeTexture;
+          if (cc && tex && cc.width === c.width && cc.height === c.height) {
+            const g2 = cc.getContext("2d");
+            g2.clearRect(0, 0, cc.width, cc.height);
+            g2.drawImage(c, 0, 0);
+            tex.needsUpdate = true;
+          } else {
+            viewer.loadCape(c);
+          }
         }
         requestAnimationFrame(step);
       };
-      step();
+      requestAnimationFrame(step);
     });
   }
   /* Stop feeding frames - call before resetCape() or loading something else. */
