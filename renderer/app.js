@@ -1445,7 +1445,7 @@ function paintCloud() {
   if (!tierState.premium) {
     hint.textContent = 'Comes with Premium: your HUD layout, settings, macros, waypoints and schematics on any PC.';
   } else if (!on) {
-    hint.textContent = 'Your HUD layout, settings, macros, waypoints and schematics follow you to any PC. Synced when you press PLAY and when the game closes.';
+    hint.textContent = 'Your HUD layout, settings, macros and waypoints follow you to any PC. Synced when you press PLAY and when the game closes.';
   } else {
     const last = cloudState.last;
     const at = (last && last.ok ? last.at : 0) || cloudState.lastAt;

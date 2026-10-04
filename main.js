@@ -383,8 +383,8 @@ const DEFAULTS = {
   // Premium: ask the build function for the beta channel (1.3.0). The
   // function decides - without Premium it is ignored and the release comes.
   betaUpdates: false,
-  // Premium cloud saves (1.3.1): settings, macros, waypoints and schematics
-  // follow you to any PC. Off until the player turns it on.
+  // Premium cloud saves (1.3.1): settings, macros and waypoints follow you to
+  // any PC (schematics left in 1.3.3). Off until the player turns it on.
   cloudSync: false
 };
 
@@ -1946,8 +1946,11 @@ ipcMain.handle('shaderpack-use', async (_e, name) => {
 /*
  * ---- CLOUD SAVES (1.3.1, Premium) -------------------------------------------
  *
- * The HUD layout and every module setting (modules.json), macros, waypoints
- * and schematics follow the player to any PC. Synced BEFORE the game starts,
+ * The HUD layout and every module setting (modules.json), macros and
+ * waypoints follow the player to any PC. NOT SCHEMATICS (1.3.3): they were
+ * the only thing big enough to fill the storage (250 MB a player), and the
+ * owner wants storage small enough to move off Supabase one day. Sharing a
+ * schematic with a friend is a separate feature and is unchanged. Synced BEFORE the game starts,
  * so it opens with the newest copy, and AFTER it closes, so what changed goes
  * up. Never while the game runs: the game owns those files then.
  *
@@ -2003,7 +2006,9 @@ function cloudPathOk(rel) {
   if (typeof rel !== 'string' || rel.includes('..') || rel.includes('//')) return false;
   const name = rel.split('/').pop() || '';
   if (name.startsWith('.')) return false;
-  return CLOUD_JSON.includes(rel) || CLOUD_SCHEM_RE.test(rel);
+  // Settings files only since schematics left cloud saves; a schematic the
+  // server still lists is left alone - never downloaded, never trashed.
+  return CLOUD_JSON.includes(rel);
 }
 
 /* What this profile has that can go to the cloud: rel path -> {full, hash, mtime, bytes}. */
@@ -2019,13 +2024,6 @@ function cloudLocal(gameDir) {
     } catch { /* not there */ }
   };
   CLOUD_JSON.forEach(add);
-  try {
-    for (const f of fs.readdirSync(path.join(gameDir, 'schematics'))) {
-      if (f.startsWith('.') || !/\.(litematic|schem)$/i.test(f) || f.length > 110) continue;
-      if (/[\\/:*?"<>|\u0000-\u001f]/.test(f)) continue;
-      add('schematics/' + f);
-    }
-  } catch { /* no schematics folder yet */ }
   return out;
 }
 
