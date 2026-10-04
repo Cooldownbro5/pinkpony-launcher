@@ -39,6 +39,13 @@ contextBridge.exposeInMainWorld('pp', {
   modsScan:     () => ipcRenderer.invoke('mods-scan'),
   modsFile:     (action, file) => ipcRenderer.invoke('mods-file', action, file),
   modsFolder:   () => ipcRenderer.invoke('mods-folder'),
+  // Shaders (1.2.9): Sodium + Iris per profile, and packs from a fixed list -
+  // the renderer names a pack by slug, it never sends a URL or a path.
+  shaders:      () => ipcRenderer.invoke('shaders-get'),
+  shadersSet:   (on) => ipcRenderer.invoke('shaders-set', !!on),
+  shadersFolder:() => ipcRenderer.invoke('shaders-folder'),
+  shaderGet:    (slug) => ipcRenderer.invoke('shaderpack-get', String(slug || '')),
+  shaderUse:    (name) => ipcRenderer.invoke('shaderpack-use', String(name || '')),
   showFolder:   (dir) => ipcRenderer.invoke('show-folder', dir),
 
   /*

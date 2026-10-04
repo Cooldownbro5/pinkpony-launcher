@@ -312,6 +312,7 @@ async function loadJars() {
   };
   group('INSTALLED BY PINK PONY', managed);
   group('YOUR MODS', theirs);
+  loadShaders();
   if (!theirs.length) {
     box.insertAdjacentHTML('beforeend',
       '<p class="jarnone">No mods of your own yet. Drop a .jar on this page to add one.</p>');
@@ -340,7 +341,9 @@ function jarRow(j) {
   toggle.setAttribute('aria-label', j.name);
   toggle.title = j.enabled ? 'Turn off' : 'Turn on';
   toggle.onclick = async () => {
-    if (j.managed && j.enabled
+    if (j.shader && j.enabled
+        && !confirm(`Turn off ${j.name}? Shaders need it - the Shaders switch above turns them off properly.`)) return;
+    if (j.managed && !j.shader && j.enabled
         && !confirm(`Turn off ${j.name}? Pink Pony will not load without it.`)) return;
     await window.pp.modsFile('toggle', j.file);
     loadJars();
@@ -364,6 +367,104 @@ function jarRow(j) {
   };
   row.appendChild(del);
   return row;
+}
+
+/* ---------------- shaders (1.2.9) ----------------
+   One switch per profile. ON installs Sodium + Iris on the next PLAY (main.js
+   ensureShaders); the packs come from a short list main.js keeps, download
+   into this profile's shaderpacks folder and become the one Iris uses. Any
+   pack the player drops in the folder shows up as a chip to pick. */
+let shaderBusy = '';
+
+async function loadShaders() {
+  const panel = $('shaderPanel');
+  if (!panel || !window.pp?.shaders) return;
+  const st = await window.pp.shaders().catch(() => null);
+  if (!st) { panel.hidden = true; return; }
+  panel.hidden = false;
+  panel.classList.toggle('off', !st.on);
+  $('shaderFor').textContent = st.mc || '';
+  const sw = $('shaderSwitch');
+  sw.setAttribute('aria-pressed', String(st.on));
+  sw.title = st.on ? 'Turn shaders off' : 'Turn shaders on';
+  $('shaderHint').textContent = !st.on
+    ? 'Off. Turn on and Sodium + Iris install the next time you press PLAY.'
+    : !st.installed
+      ? 'On - Sodium and Iris install when you press PLAY. Pick a pack below.'
+      : st.active
+        ? `On, using ${st.active}. In game: Options > Video Settings > Shader Packs to change its settings.`
+        : 'On. Pick a pack below - or play with none for Sodium\'s extra FPS.';
+
+  const grid = $('packGrid');
+  grid.textContent = '';
+  for (const k of st.packs) {
+    const card = document.createElement('div');
+    const active = !!k.file && st.active === k.file;
+    card.className = 'pack' + (active ? ' active' : '');
+    card.innerHTML = `<div class="packtop"><b>${esc(k.name)}</b><span class="packtag">${esc(k.tag)}</span></div>
+                      <p>${esc(k.blurb)}</p>`;
+    const b = document.createElement('button');
+    b.className = 'packbtn' + (active ? ' on' : k.file ? '' : ' go');
+    b.textContent = shaderBusy === k.slug ? 'Downloading…' : active ? 'In use' : k.file ? 'Use' : 'Get';
+    b.disabled = !!shaderBusy || active;
+    b.onclick = async () => {
+      const hint = $('shaderHint');
+      try {
+        if (k.file) {
+          await window.pp.shaderUse(k.file);
+        } else {
+          shaderBusy = k.slug;
+          loadShaders();
+          await window.pp.shaderGet(k.slug);
+          if (!st.on) await window.pp.shadersSet(true);     // getting a pack means you want shaders
+        }
+      } catch (e) {
+        if (hint) hint.textContent = String(e?.message || e).replace(/^Error invoking remote method '[^']+': (Error: )?/, '');
+        shaderBusy = '';
+        return;
+      }
+      shaderBusy = '';
+      loadShaders();
+    };
+    card.appendChild(b);
+    grid.appendChild(card);
+  }
+
+  const others = $('packOthers');
+  others.textContent = '';
+  if (st.others.length || st.active) {
+    others.insertAdjacentHTML('beforeend', '<span class="jargroup">IN YOUR FOLDER</span>');
+    for (const f of st.others) {
+      const c = document.createElement('button');
+      c.className = 'packchip' + (st.active === f ? ' active' : '');
+      c.textContent = f.replace(/\.zip$/i, '');
+      c.title = st.active === f ? 'In use' : 'Use ' + f;
+      c.onclick = () => window.pp.shaderUse(f).then(loadShaders).catch((e) => {
+        $('shaderHint').textContent = String(e?.message || e).replace(/^Error invoking remote method '[^']+': (Error: )?/, '');
+      });
+      others.appendChild(c);
+    }
+    if (st.active) {
+      const none = document.createElement('button');
+      none.className = 'packchip';
+      none.textContent = 'No pack';
+      none.title = 'Keep Sodium, switch the shader pack off';
+      none.onclick = () => window.pp.shaderUse('').then(loadShaders).catch(() => {});
+      others.appendChild(none);
+    }
+  }
+}
+
+function wireShaders() {
+  const sw = $('shaderSwitch');
+  if (!sw) return;
+  sw.onclick = async () => {
+    const on = sw.getAttribute('aria-pressed') !== 'true';
+    await window.pp.shadersSet(on).catch(() => {});
+    loadShaders();
+    loadJars();
+  };
+  $('shaderFolder').onclick = () => window.pp?.shadersFolder?.();
 }
 
 function wireJars() {
@@ -2191,6 +2292,7 @@ loadVersions();
 loadUpdate();
 loadJars();
 wireJars();
+wireShaders();
 loadTier();
 wireSettings();
 loadSettings();

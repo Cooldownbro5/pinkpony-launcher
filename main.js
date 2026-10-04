@@ -377,7 +377,9 @@ const DEFAULTS = {
   // profile id -> when it was last launched. Written by main only.
   lastPlayed: {},
   // Which version of the Terms this player agreed to. See TERMS_VERSION.
-  termsAccepted: ''
+  termsAccepted: '',
+  // profile id -> shaders on (1.2.9). Written by main only - see 'shaders-set'.
+  shaders: {}
 };
 
 /*
@@ -472,6 +474,7 @@ ipcMain.handle('settings-write', async (_e, patch) => {
   else { next.windowWidth = 0; next.windowHeight = 0; }
   // Only main writes this; whatever the renderer sent is put back.
   next.lastPlayed = current.lastPlayed && typeof current.lastPlayed === 'object' ? current.lastPlayed : {};
+  next.shaders = current.shaders && typeof current.shaders === 'object' ? current.shaders : {};
   for (const k of ['javaPath', 'gameDir', 'code']) next[k] = String(next[k] || '').trim();
   // Only ever the current version or nothing - the renderer cannot claim
   // agreement to some other text.
@@ -1213,18 +1216,21 @@ ipcMain.handle('mods-scan', async () => {
   let files = [];
   try { files = fs.readdirSync(dir); } catch { return []; }
 
+  const shaderJars = new Set(Object.values(readShaderManifest(dir).files));
   return files
     .filter((f) => /\.jar(\.disabled)?$/i.test(f))
     .map((f) => {
       const info = describeJar(f, path.join(dir, f));
       const lower = f.toLowerCase();
+      const shader = shaderJars.has(f.replace(/\.disabled$/i, ''));
       return {
         ...info,
+        shader,
         enabled: !lower.endsWith('.disabled'),
         // Ours and its dependency are marked so the UI can say why removing
         // them is a bad idea, rather than letting somebody delete the client
         // and wonder where it went.
-        managed: lower.startsWith('pinkpony') || lower.startsWith('fabric-api')
+        managed: lower.startsWith('pinkpony') || lower.startsWith('fabric-api') || shader
       };
     })
     .sort((a, b) => Number(b.managed) - Number(a.managed) || a.name.localeCompare(b.name));
@@ -1658,6 +1664,276 @@ async function ensureFabricApi(modsDir, mcVersion) {
   await download(file.url, path.join(modsDir, file.filename));
   return file.filename;
 }
+
+/*
+ * ---- SHADERS (1.2.9) --------------------------------------------------------
+ *
+ * Shaders on Fabric are two mods: Sodium (the renderer) and Iris (which loads
+ * shader packs, and needs Sodium). With the Shaders switch on for a profile,
+ * PLAY fetches the newest builds of both for that Minecraft version from
+ * Modrinth - the same way Fabric API is fetched - and keeps them current.
+ *
+ * WHAT IS OURS. Only the jars this launcher downloaded, listed in
+ * mods/.pinkpony-shaders.json. A Sodium or Iris the player put there
+ * themselves is never touched, updated or switched off - we just do not
+ * download a second copy.
+ *
+ * OFF RENAMES, IT DOES NOT DELETE. Switching shaders off turns our two jars
+ * into .jar.disabled, so switching back on is instant and offline. Only an
+ * outdated copy of one of OUR jars is ever removed, after its replacement is
+ * fully downloaded.
+ *
+ * NEVER A REASON NOT TO PLAY. Modrinth down, no build for this version yet:
+ * the game launches without shaders and the launcher says why.
+ */
+const MODRINTH = 'https://api.modrinth.com/v2';
+const MR_HEADERS = { 'User-Agent': 'pinkponyclient/launcher (contact: pinkponyclient.com)' };
+const SHADER_MODS = ['sodium', 'iris'];
+const SHADER_MANIFEST = '.pinkpony-shaders.json';
+const PACK_MANIFEST = '.pinkpony-packs.json';
+
+/*
+ * The packs offered on the Profiles page, by Modrinth slug. Only these can be
+ * downloaded through the launcher - the renderer names one, it cannot send a
+ * URL. Any other pack still works: drop it in the shaderpacks folder.
+ */
+const SHADER_PACKS = [
+  { slug: 'complementary-reimagined', name: 'Complementary Reimagined', tag: 'Best all-round',
+    blurb: 'Minecraft as you know it, just beautiful. The one to start with.' },
+  { slug: 'complementary-unbound', name: 'Complementary Unbound', tag: 'Cinematic',
+    blurb: 'Complementary with more drama - deeper skies, bolder light.' },
+  { slug: 'bsl-shaders', name: 'BSL', tag: 'Classic',
+    blurb: 'Bright, colourful and soft. A favourite for years.' },
+  { slug: 'bliss-shader', name: 'Bliss', tag: 'Fantasy',
+    blurb: 'A dreamy fantasy look, with lots of settings to tune.' },
+  { slug: 'makeup-ultra-fast-shaders', name: 'MakeUp Ultra Fast', tag: 'Low-end PCs',
+    blurb: 'Made for laptops and older graphics cards. Still looks good.' },
+  { slug: 'sildurs-vibrant-shaders', name: "Sildur's Vibrant", tag: 'Any PC',
+    blurb: 'Runs on almost anything, from Lite up to Extreme.' }
+];
+
+function readShaderManifest(modsDir) {
+  try {
+    const m = JSON.parse(fs.readFileSync(path.join(modsDir, SHADER_MANIFEST), 'utf8'));
+    return { files: m && typeof m.files === 'object' ? m.files : {} };
+  } catch { return { files: {} }; }
+}
+
+function writeShaderManifest(modsDir, m) {
+  const f = path.join(modsDir, SHADER_MANIFEST);
+  fs.writeFileSync(f + '.tmp', JSON.stringify(m, null, 2));
+  fs.renameSync(f + '.tmp', f);
+}
+
+/* The newest Modrinth version of a project for this game version and loader. */
+async function mrVersion(project, mcVersion, loaders) {
+  const q = [];
+  if (mcVersion) q.push('game_versions=' + encodeURIComponent(JSON.stringify([mcVersion])));
+  if (loaders) q.push('loaders=' + encodeURIComponent(JSON.stringify(loaders)));
+  const res = await fetch(`${MODRINTH}/project/${encodeURIComponent(project)}/version?${q.join('&')}`,
+    { headers: MR_HEADERS });
+  if (!res.ok) return null;
+  const list = await res.json();
+  if (!Array.isArray(list) || !list.length) return null;
+  const v = list.find((x) => x.version_type === 'release') || list[0];
+  const file = v.files?.find((f) => f.primary) || v.files?.[0];
+  return file ? { version: v.version_number, url: file.url, filename: file.filename } : null;
+}
+
+function enableJar(modsDir, f) {
+  const on = path.join(modsDir, f), off = on + '.disabled';
+  if (!fs.existsSync(on) && fs.existsSync(off)) fs.renameSync(off, on);
+}
+
+function disableJar(modsDir, f) {
+  const on = path.join(modsDir, f), off = on + '.disabled';
+  if (fs.existsSync(on)) {
+    if (fs.existsSync(off)) fs.unlinkSync(off);
+    fs.renameSync(on, off);
+  }
+}
+
+/* Mod ids the PLAYER installed (enabled jars that are not on our list). */
+function theirModIds(modsDir, ours) {
+  const ids = new Set();
+  for (const f of fs.readdirSync(modsDir)) {
+    if (!/\.jar$/i.test(f) || ours.has(f)) continue;
+    const id = describeJar(f, path.join(modsDir, f)).id;
+    if (id) ids.add(id);
+  }
+  return ids;
+}
+
+/* Returns '' when shaders are ready (or off), or a sentence saying why not. */
+async function ensureShaders(modsDir, mcVersion, on) {
+  const m = readShaderManifest(modsDir);
+  if (!on) {
+    for (const f of Object.values(m.files)) disableJar(modsDir, f);
+    return '';
+  }
+  const theirs = theirModIds(modsDir, new Set(Object.values(m.files)));
+  say(62, 'Getting shaders (Sodium + Iris)…');
+
+  // Both or neither: Iris without Sodium will not load, and Sodium alone is
+  // not what anybody switched on.
+  const want = {};
+  for (const slug of SHADER_MODS) {
+    if (theirs.has(slug)) continue;
+    let v = null;
+    try { v = await mrVersion(slug, mcVersion, ['fabric']); } catch { v = null; }
+    want[slug] = v;
+  }
+  const missing = SHADER_MODS.filter((slug) => !theirs.has(slug) && !want[slug] && !m.files[slug]);
+  if (missing.length) {
+    for (const f of Object.values(m.files)) disableJar(modsDir, f);
+    return `Shaders are not out for ${mcVersion} yet (no ${missing.join(' / ')} build) - playing without them.`;
+  }
+
+  for (const slug of SHADER_MODS) {
+    if (theirs.has(slug)) continue;
+    const have = m.files[slug];
+    const v = want[slug];
+    if (!v || v.filename === have) { enableJar(modsDir, have); continue; }   // offline: keep what we have
+    say(63, `Getting ${slug === 'iris' ? 'Iris' : 'Sodium'} ${v.version}…`);
+    await download(v.url, path.join(modsDir, v.filename));
+    if (have && have !== v.filename) {
+      for (const old of [have, have + '.disabled']) {
+        try { fs.unlinkSync(path.join(modsDir, old)); } catch { /* already gone */ }
+      }
+    }
+    m.files[slug] = v.filename;
+    writeShaderManifest(modsDir, m);
+  }
+  return '';
+}
+
+/* ---- the shader packs, and Iris's own settings file ---- */
+
+function packsDir(gameDir) { return path.join(gameDir, 'shaderpacks'); }
+
+function irisProps(gameDir) { return path.join(gameDir, 'config', 'iris.properties'); }
+
+/* Iris keeps the chosen pack in config/iris.properties. Read it loosely. */
+function readIris(gameDir) {
+  const out = { pack: '', on: false };
+  try {
+    for (const line of fs.readFileSync(irisProps(gameDir), 'utf8').split(/\r?\n/)) {
+      const m = line.match(/^\s*(shaderPack|enableShaders)\s*[=:]\s*(.*)$/);
+      if (!m) continue;
+      const v = m[2].replace(/\\(.)/g, '$1').trim();
+      if (m[1] === 'shaderPack') out.pack = v;
+      else out.on = v === 'true';
+    }
+  } catch { /* Iris has not run yet */ }
+  return out;
+}
+
+/* Change only the two lines we own; every other Iris setting is kept. */
+function writeIris(gameDir, pack, on) {
+  const file = irisProps(gameDir);
+  let lines = [];
+  try { lines = fs.readFileSync(file, 'utf8').split(/\r?\n/); } catch { /* new file */ }
+  lines = lines.filter((l) => !/^\s*(shaderPack|enableShaders)\s*[=:]/.test(l));
+  while (lines.length && !lines[lines.length - 1].trim()) lines.pop();
+  if (pack) lines.push('shaderPack=' + pack.replace(/\\/g, '\\\\'));
+  lines.push('enableShaders=' + (on ? 'true' : 'false'));
+  fs.mkdirSync(path.dirname(file), { recursive: true });
+  fs.writeFileSync(file + '.tmp', lines.join('\n') + '\n');
+  fs.renameSync(file + '.tmp', file);
+}
+
+function readPackManifest(dir) {
+  try {
+    const m = JSON.parse(fs.readFileSync(path.join(dir, PACK_MANIFEST), 'utf8'));
+    return m && typeof m === 'object' ? m : {};
+  } catch { return {}; }
+}
+
+ipcMain.handle('shaders-get', async () => {
+  const s = readSettings();
+  const p = activeProfile(s);
+  const gameDir = profileDir(s, p);
+  const dir = packsDir(gameDir);
+  const got = readPackManifest(dir);
+  let entries = [];
+  try {
+    entries = fs.readdirSync(dir)
+      .filter((f) => !f.startsWith('.') && (/\.zip$/i.test(f) || fs.statSync(path.join(dir, f)).isDirectory()));
+  } catch { /* no folder yet */ }
+  const iris = readIris(gameDir);
+  const listed = new Set(Object.values(got));
+  const mods = readShaderManifest(path.join(gameDir, 'mods'));
+  return {
+    on: !!s.shaders?.[p.id],
+    mc: p.mc,
+    installed: SHADER_MODS.every((slug) => mods.files[slug]),
+    active: iris.on ? iris.pack : '',
+    packs: SHADER_PACKS.map((k) => ({ ...k, file: got[k.slug] && entries.includes(got[k.slug]) ? got[k.slug] : '' })),
+    others: entries.filter((f) => !listed.has(f)),
+    running: gameRunning
+  };
+});
+
+ipcMain.handle('shaders-set', async (_e, on) => {
+  const s = readSettings();
+  const p = activeProfile(s);
+  const next = { ...s, shaders: { ...(s.shaders || {}), [p.id]: !!on } };
+  fs.writeFileSync(SETTINGS + '.tmp', JSON.stringify(next, null, 2));
+  fs.renameSync(SETTINGS + '.tmp', SETTINGS);
+  // Off takes effect now (a rename); on downloads at the next PLAY.
+  if (!on && !gameRunning) {
+    try { await ensureShaders(path.join(profileDir(next, p), 'mods'), p.mc, false); } catch { /* next launch does it */ }
+  }
+  return !!on;
+});
+
+ipcMain.handle('shaders-folder', async () => {
+  const dir = packsDir(profileDir());
+  fs.mkdirSync(dir, { recursive: true });
+  shell.openPath(dir);
+  return dir;
+});
+
+/* Download one of SHADER_PACKS into this profile and make it the active pack. */
+ipcMain.handle('shaderpack-get', async (_e, slug) => {
+  const pick = SHADER_PACKS.find((k) => k.slug === slug);
+  if (!pick) throw new Error('unknown pack');
+  const s = readSettings();
+  const p = activeProfile(s);
+  const gameDir = profileDir(s, p);
+  // Packs list the game versions they were tested on, and many lag a version
+  // behind while working fine. This version first, then the newest Iris build.
+  const v = await mrVersion(slug, p.mc, ['iris']).catch(() => null)
+         || await mrVersion(slug, null, ['iris']).catch(() => null)
+         || await mrVersion(slug, null, null).catch(() => null);
+  if (!v || !/\.zip$/i.test(v.filename) || /[\\/]/.test(v.filename)) throw new Error('No download for that pack right now.');
+  const dir = packsDir(gameDir);
+  await download(v.url, path.join(dir, v.filename));
+  const got = readPackManifest(dir);
+  if (got[slug] && got[slug] !== v.filename) {
+    try { fs.unlinkSync(path.join(dir, got[slug])); } catch { /* already gone */ }
+  }
+  got[slug] = v.filename;
+  fs.writeFileSync(path.join(dir, PACK_MANIFEST), JSON.stringify(got, null, 2));
+  if (!gameRunning) writeIris(gameDir, v.filename, true);
+  return v.filename;
+});
+
+/* Make a pack in the folder the active one, or '' for shaders off in game. */
+ipcMain.handle('shaderpack-use', async (_e, name) => {
+  if (gameRunning) throw new Error('Close the game first - it saves its own shader choice when it closes.');
+  const s = readSettings();
+  const gameDir = profileDir(s);
+  const n = String(name || '');
+  if (n) {
+    if (/[\\/]/.test(n) || n.startsWith('.') || !fs.existsSync(path.join(packsDir(gameDir), n))) throw new Error('No such pack');
+    writeIris(gameDir, n, true);
+  } else {
+    const cur = readIris(gameDir);
+    writeIris(gameDir, cur.pack, false);
+  }
+  return n;
+});
 
 async function ensureClient(modsDir, mcVersion, code) {
   if (!code) {
@@ -2222,6 +2498,11 @@ async function launchGame(opts) {
   const custom = await ensureFabric(root, mcVersion);
   await ensureClient(modsDir, mcVersion, settings.code);
   await ensureFabricApi(modsDir, mcVersion);
+  const shadersOn = !!settings.shaders?.[profile.id];
+  let shaderNote = '';
+  try { shaderNote = await ensureShaders(modsDir, mcVersion, shadersOn); }
+  catch (e) { shaderNote = `Could not get shaders (${e?.message || e}) - playing without them.`; }
+  if (shaderNote) addEvent('shaders', shaderNote, profile.name);
   const java = await ensureJava(root, mcVersion, settings.javaPath);
   carryIfNew(settings, profile);
   const serversAt = serversIn(settings, profile);
@@ -2298,12 +2579,16 @@ async function launchGame(opts) {
     // Otherwise ask again - the launcher is about to be looked at.
     if (updateWaiting) installUpdate();
     else checkForUpdate('game-closed');
-    say(100, code === 0 ? 'Closed' : `Game ${describeExit(code)}`, { done: true });
+    const early = Date.now() - startedAt < 120000;
+    say(100, code === 0 ? 'Closed'
+      : shadersOn && early ? `Game ${describeExit(code)} while starting with shaders on - if it happens again, turn Shaders off on the Profiles page.`
+      : `Game ${describeExit(code)}`, { done: true });
     if (win && !win.isDestroyed() && settings.closeOnLaunch && settings.reopenOnClose !== false) win.show();
   });
 
   linkAccount(account).catch(() => {});
 
+  const startedAt = Date.now();
   gameRunning = true;
   let child;
   try {

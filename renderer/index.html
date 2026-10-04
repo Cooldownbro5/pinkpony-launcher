@@ -169,6 +169,23 @@
       <div class="profgrid" id="verGrid"></div>
       <div class="verpicks" id="verPicks" hidden></div>
 
+      <!-- SHADERS (1.2.9): one switch per profile installs Sodium + Iris on
+           the next PLAY; the packs below download straight into this
+           profile's shaderpacks folder and become the one in use. -->
+      <div class="modpanel shaderpanel" id="shaderPanel">
+        <div class="modpanelhead">
+          <div class="mphtext">
+            <h2>Shaders <em id="shaderFor"></em></h2>
+            <p id="shaderHint">Turn on, pick a pack, press PLAY.</p>
+          </div>
+          <span class="grow"></span>
+          <button class="ghost" id="shaderFolder"><svg viewBox="0 0 24 24"><path d="M3 7h6l2 2h10v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg>Shader folder</button>
+          <button class="sw2" id="shaderSwitch" aria-pressed="false" aria-label="Shaders" title="Shaders"></button>
+        </div>
+        <div class="packgrid" id="packGrid"></div>
+        <div class="packothers" id="packOthers"></div>
+      </div>
+
       <div class="modpanel" id="modPanel">
         <div class="modpanelhead">
           <div class="mphtext">

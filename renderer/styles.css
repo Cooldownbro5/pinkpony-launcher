@@ -797,6 +797,30 @@ button:focus-visible,select:focus-visible,input:focus-visible{outline:2px solid 
 .dropzone b{color:var(--ash)}
 .dropzone.hot{border-color:var(--pink);background:#FF3FA812;color:var(--bone)}
 
+/* ---------------- shaders (1.2.9) ---------------- */
+.shaderpanel{margin-bottom:14px}
+.shaderpanel.off .packgrid{opacity:.45}
+.packgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(210px,1fr));gap:10px}
+.pack{background:var(--panel2);border:1px solid var(--line);border-radius:14px;padding:12px 12px 11px;
+  display:flex;flex-direction:column;gap:6px;transition:border-color .15s}
+.pack.active{border-color:#FF3FA899;background:linear-gradient(180deg,#FF3FA812,transparent 70%),var(--panel2)}
+.packtop{display:flex;align-items:center;gap:8px}
+.packtop b{font-size:13.5px}
+.packtag{margin-left:auto;font-family:var(--m);font-size:9.5px;color:var(--pinkhi);
+  border:1px solid #FF3FA84D;border-radius:5px;padding:2px 6px;white-space:nowrap}
+.pack p{margin:0;font-size:11.5px;color:var(--ash);line-height:1.4;flex:1}
+.packbtn{align-self:flex-start;margin-top:4px;font-size:11.5px;font-weight:600;border-radius:8px;
+  padding:6px 12px;background:#ffffff10;color:var(--bone)}
+.packbtn:hover{background:#ffffff1c}
+.packbtn.go{background:linear-gradient(90deg,var(--deep),var(--pink));color:#fff}
+.packbtn.on{background:transparent;color:var(--good);padding-left:0;cursor:default}
+.packbtn[disabled]{opacity:.6;cursor:wait}
+.packothers{display:flex;flex-wrap:wrap;gap:6px;margin-top:10px;align-items:center}
+.packothers .jargroup{margin:0 4px 0 2px}
+.packchip{font-size:11.5px;border:1px solid var(--line2);border-radius:999px;padding:4px 10px;color:var(--ash)}
+.packchip:hover{border-color:#FF3FA899;color:var(--bone)}
+.packchip.active{border-color:var(--pink);color:var(--pinkhi)}
+
 /* ---------------- cosmetics: the wardrobe ---------------- */
 .wdrobe{display:grid;grid-template-columns:minmax(380px,30%) 1fr;gap:18px;align-items:start}
 .stagecol{position:sticky;top:0;display:grid;gap:10px}
