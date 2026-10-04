@@ -719,6 +719,85 @@ async function rest(path) {
 const art = (file) =>
   `${SB}/storage/v1/object/public/cosmetics/${encodeURIComponent(file)}`;
 
+/* ANIMATED CAPES (client 2.64.1). A cape file that is several 2:1 sheets
+   stacked on top of each other (512 wide, 256 x frames tall) is an animation,
+   played top to bottom at 100 ms a frame, or "_80ms" at the end of the name.
+   Same rule as the game. scan() keeps every cape swatch on the right frame;
+   cape3d() hands the 3D model one frame at a time. A normal cape is untouched. */
+const CapeAnim = (() => {
+  const SEL = ".capepanel, [data-cape]";
+  const still = matchMedia("(prefers-reduced-motion: reduce)").matches;
+  const seen = new Map();
+  const msOf = (u) => { const m = /_(\d{2,4})ms\.png(?:$|\?)/i.exec(decodeURIComponent(u)); return m ? Math.max(30, Math.min(2000, +m[1])) : 100; };
+  function info(url) {
+    if (!seen.has(url)) seen.set(url, new Promise((res) => {
+      const i = new Image(); i.crossOrigin = "anonymous";
+      i.onload = () => {
+        const w = i.naturalWidth, fh = w / 2;
+        const n = fh >= 32 && i.naturalHeight % fh === 0 ? i.naturalHeight / fh : 1;
+        res({ img: i, n, w, fh, ms: msOf(url) });
+      };
+      i.onerror = () => res(null);
+      i.src = url;
+    }));
+    return seen.get(url);
+  }
+  const frameAt = (a) => still ? 0 : Math.floor(Date.now() / a.ms) % a.n;
+  const urlOf = (el) => { const m = /url\(["']?(.*?)["']?\)/.exec(el.style.backgroundImage || ""); return m ? m[1] : null; };
+  const live = new Set();
+  function scan() {
+    document.querySelectorAll(SEL).forEach((el) => {
+      const u = urlOf(el);
+      if (!u || el._capeUrl === u) return;
+      if (el._cape) { el.style.backgroundSize = el._capeSize; el.style.backgroundPositionY = el._capeY; el._cape = null; }
+      el._capeUrl = u;
+      info(u).then((a) => {
+        if (!a || a.n < 2 || el._capeUrl !== u) return;
+        el._capeSize = el.style.backgroundSize; el._capeY = el.style.backgroundPositionY;
+        el._cape = a;
+        el.style.backgroundSize = `640% ${200 * a.n}%`;
+        live.add(el);
+        paint(el);
+      });
+    });
+    live.forEach(paint);
+  }
+  function paint(el) {
+    if (!el.isConnected || !el._cape) { live.delete(el); return; }
+    const a = el._cape, k = frameAt(a);
+    /* the outside panel of frame k: background-position % is a share of the leftover space */
+    el.style.backgroundPositionY = ((2 * k + 1 / 16) / (2 * a.n - 1) * 100) + "%";
+  }
+  setInterval(scan, 50);
+  let tok = 0;
+  /* Put a cape on a skinview3d model. Resolves like viewer.loadCape(url). */
+  function cape3d(viewer, url) {
+    const me = ++tok;
+    return info(url).then((a) => {
+      if (me !== tok) return;
+      if (!a || a.n < 2) return viewer.loadCape(url);
+      const c = document.createElement("canvas"); c.width = a.w; c.height = a.fh;
+      const g = c.getContext("2d");
+      let last = -1;
+      const step = () => {
+        if (me !== tok) return;
+        const k = frameAt(a);
+        if (k !== last) {
+          last = k;
+          g.clearRect(0, 0, a.w, a.fh);
+          g.drawImage(a.img, 0, k * a.fh, a.w, a.fh, 0, 0, a.w, a.fh);
+          viewer.loadCape(c);
+        }
+        requestAnimationFrame(step);
+      };
+      step();
+    });
+  }
+  /* Stop feeding frames - call before resetCape() or loading something else. */
+  const stop3d = () => { tok++; };
+  return { scan, cape3d, stop3d, info };
+})();
+
 /* One cape panel, correctly cropped and correctly shaped.
  *
  *   width  10/64 of the sheet -> background-size x = 100/(10/64) = 640%
@@ -1928,7 +2007,7 @@ function cosCard(c) {
     : state === 'gone'
     ? `<div class="c2art goneart"><span>${anyArtLoaded() ? 'no artwork' : 'offline'}</span></div>`
     : c.kind === 'cape'
-    ? `<div class="c2art capeart"><i style="background-image:url('${cosArt(c.value)}');${CAPE_UV}"></i></div>`
+    ? `<div class="c2art capeart"><i data-cape style="background-image:url('${cosArt(c.value)}');${CAPE_UV}"></i></div>`
     : `<div class="c2art" style="background-image:url('${cosArt(c.value)}')"></div>`;
 
   const badge = worn ? '<span class="c2badge on">WEARING</span>'
@@ -2005,7 +2084,7 @@ function paintSlots() {
     off.hidden = !item;
     off.onclick = () => item && equip(item, '');
   };
-  set('slotCape', cape, cape ? `<i style="background-image:url('${cosArt(cape.value)}');${CAPE_UV}"></i>` : '');
+  set('slotCape', cape, cape ? `<i data-cape style="background-image:url('${cosArt(cape.value)}');${CAPE_UV}"></i>` : '');
   set('slotTag', tag, tag ? `<span class="mctag">${mcHtml(tag.value)}</span>` : '');
 }
 
@@ -2099,9 +2178,10 @@ const Fit = (() => {
 
     if (!viewer) return;
     if (cape && checkArt(cape.value, () => {}) !== 'gone') {
-      viewer.loadCape(cosArt(cape.value)).catch(() => viewer.resetCape());
+      CapeAnim.cape3d(viewer, cosArt(cape.value)).catch(() => viewer.resetCape());
       if (trying?.kind === 'cape') viewer.playerObject.rotation.y = Math.PI - 0.55;
     } else {
+      CapeAnim.stop3d();
       viewer.resetCape();
     }
   }
