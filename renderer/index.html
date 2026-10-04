@@ -60,7 +60,15 @@
       <div class="plushead">
         <span class="gem"><svg viewBox="0 0 24 24"><path d="M6 3h12l4 6-10 12L2 9z"/><path d="M2 9h20M12 9v12"/></svg></span><b>PREMIUM</b>
       </div>
-      <p>The client, every mod and the Premium tags. $5.99 a month.</p>
+      <p>$5.99 a month, never auto-charged.</p>
+      <!-- What Premium gets (1.3.0) - the same list as the store page. -->
+      <ul class="perks">
+        <li>The client on 1.21.1 and 26.3</li>
+        <li>Every mod, shaders included</li>
+        <li>Beta updates - new stuff first</li>
+        <li>Premium-only tags</li>
+        <li>Premium role in Discord</li>
+      </ul>
       <button class="up">GET PREMIUM</button>
     </div>
 
@@ -371,6 +379,11 @@
         <div class="setrow">
           <div class="setmeta"><b>Keep logs</b><i>Write the game's output to a file. Useful when something breaks.</i></div>
           <div class="setctl"><button class="sw2" id="keepLogs" aria-pressed="false"></button></div>
+        </div>
+
+        <div class="setrow" id="betaRow">
+          <div class="setmeta"><b>Beta updates <span class="prem">PREMIUM</span></b><i id="betaHint">Get new builds first, including things still being tested. Turn off to go back to the normal build on your next PLAY.</i></div>
+          <div class="setctl"><button class="sw2" id="betaUpdates" aria-pressed="false"></button></div>
         </div>
       </div>
 

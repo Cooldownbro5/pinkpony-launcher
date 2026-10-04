@@ -379,7 +379,10 @@ const DEFAULTS = {
   // Which version of the Terms this player agreed to. See TERMS_VERSION.
   termsAccepted: '',
   // profile id -> shaders on (1.2.9). Written by main only - see 'shaders-set'.
-  shaders: {}
+  shaders: {},
+  // Premium: ask the build function for the beta channel (1.3.0). The
+  // function decides - without Premium it is ignored and the release comes.
+  betaUpdates: false
 };
 
 /*
@@ -467,6 +470,7 @@ ipcMain.handle('settings-write', async (_e, patch) => {
   next.reopenOnClose = !!next.reopenOnClose;
   next.keepLogs = !!next.keepLogs;
   next.fullscreen = !!next.fullscreen;
+  next.betaUpdates = !!next.betaUpdates;
   // A window size is both or neither, and inside what a screen can be. These
   // end up as --width/--height on the game's command line.
   const w = Math.round(Number(next.windowWidth) || 0), h = Math.round(Number(next.windowHeight) || 0);
@@ -1935,7 +1939,7 @@ ipcMain.handle('shaderpack-use', async (_e, name) => {
   return n;
 });
 
-async function ensureClient(modsDir, mcVersion, code) {
+async function ensureClient(modsDir, mcVersion, code, beta = false) {
   if (!code) {
     throw new Error('No access code saved - put yours in Settings first.');
   }
@@ -1945,7 +1949,8 @@ async function ensureClient(modsDir, mcVersion, code) {
     method: 'POST',
     headers: { 'content-type': 'application/json', apikey: SB_KEY,
                Authorization: 'Bearer ' + SB_KEY },
-    body: JSON.stringify({ code, mc_version: mcVersion })
+    body: JSON.stringify(beta ? { code, mc_version: mcVersion, channel: 'beta' }
+                              : { code, mc_version: mcVersion })
   }).then((r) => r.json());
 
   if (!res?.ok) {
@@ -1970,9 +1975,10 @@ async function ensureClient(modsDir, mcVersion, code) {
     }
   }
 
-  say(52, `Installing Pink Pony ${res.client_version}…`);
+  const tagged = res.client_version + (res.channel === 'beta' ? ' (beta)' : '');
+  say(52, `Installing Pink Pony ${tagged}…`);
   await download(res.url, target);
-  addEvent('up', `Installed Pink Pony ${res.client_version}`, res.file);
+  addEvent('up', `Installed Pink Pony ${tagged}`, res.file);
   return res.file;
 }
 
@@ -2496,7 +2502,7 @@ async function launchGame(opts) {
 
   say(4, 'Preparing…');
   const custom = await ensureFabric(root, mcVersion);
-  await ensureClient(modsDir, mcVersion, settings.code);
+  await ensureClient(modsDir, mcVersion, settings.code, !!settings.betaUpdates);
   await ensureFabricApi(modsDir, mcVersion);
   const shadersOn = !!settings.shaders?.[profile.id];
   let shaderNote = '';

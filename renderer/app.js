@@ -146,6 +146,38 @@ function paintProfile() {
  * soon" tile was a promise and a dead click; it went.
  */
 let BUILDS = {};                       // mc version -> newest published client version
+let BETA_BUILDS = {};                  // mc version -> newest BETA client version (1.3.0)
+let tierState = { premium: false };
+
+/* "2.64.0-beta.2" vs "2.63.4", the way the build function compares them: a
+   pre-release is older than the same version without a tag. */
+function vcmp(a, b) {
+  const sp = (v) => { const [m, ...t] = String(v || '').split('-');
+    return { n: m.split('.').map((x) => parseInt(x, 10) || 0), t: t.join('-') }; };
+  const A = sp(a), B = sp(b);
+  for (let i = 0; i < Math.max(A.n.length, B.n.length); i++) {
+    const d = (A.n[i] || 0) - (B.n[i] || 0);
+    if (d) return d;
+  }
+  if (!A.t && B.t) return 1;
+  if (A.t && !B.t) return -1;
+  const ta = (A.t.match(/\d+/g) || []).map(Number), tb = (B.t.match(/\d+/g) || []).map(Number);
+  for (let i = 0; i < Math.max(ta.length, tb.length); i++) {
+    const d = (ta[i] || 0) - (tb[i] || 0);
+    if (d) return d;
+  }
+  return A.t.localeCompare(B.t);
+}
+
+/* Is this launcher on the beta channel right now? Premium, and switched on. */
+function onBeta() { return !!(settings && settings.betaUpdates && tierState.premium); }
+
+/* The build PLAY will install for a version: the beta when that is newer and
+   this player is on the beta channel, otherwise the release. */
+function latestFor(v) {
+  const rel = BUILDS[v] || '', beta = BETA_BUILDS[v] || '';
+  return onBeta() && beta && (!rel || vcmp(beta, rel) > 0) ? beta : rel;
+}
 
 const lineOf = (v) => String(v).split('.').slice(0, 2).join('.');
 
@@ -178,7 +210,7 @@ function drawVersions() {
   versions.forEach((v) => {
     const mine = profiles.find((p) => p.mc === v);
     const on = profile.mc === v;
-    const latest = BUILDS[v] || '';
+    const latest = latestFor(v);
     // The active profile's jar is known exactly (loadJars reads it); the
     // others come from the file name main.js saw in their folder.
     const installed = on ? (updateInfo.installed || mine?.client || '') : (mine?.client || '');
@@ -763,6 +795,10 @@ async function loadVersions() {
   if (!rows.length) return;             // offline: keep whatever we have
   mcVersions = rows.map((r) => r.mc_version);
   BUILDS = Object.fromEntries(rows.map((r) => [r.mc_version, String(r.client_version || '')]));
+  const betas = await rest('/rest/v1/client_builds_beta?select=mc_version,client_version&listed=eq.true')
+    .catch(() => []);
+  BETA_BUILDS = Object.fromEntries((Array.isArray(betas) ? betas : [])
+    .map((r) => [r.mc_version, String(r.client_version || '')]));
   // The profiles page draws its version tiles from this, so it has to repaint
   // when the list arrives - the first render happens before this resolves.
   drawVersions();
@@ -771,7 +807,14 @@ async function loadVersions() {
 async function loadUpdate() {
   const rows = await rest('/rest/v1/client_builds?select=client_version,notes,updated_at'
                           + '&listed=eq.true&mc_version=eq.' + encodeURIComponent(version.value));
-  const build = rows[0];
+  let build = rows[0];
+  let beta = false;
+  if (onBeta()) {
+    const b = (await rest('/rest/v1/client_builds_beta?select=client_version,notes,updated_at'
+                          + '&listed=eq.true&mc_version=eq.' + encodeURIComponent(version.value))
+               .catch(() => []))[0];
+    if (b && (!build || vcmp(b.client_version, build.client_version) > 0)) { build = b; beta = true; }
+  }
   const title = document.querySelector('.update h3');
   const list = document.querySelector('.ticks');
   const tag = $('updVer');
@@ -783,7 +826,7 @@ async function loadUpdate() {
   }
 
   if (tag) tag.textContent = 'v' + build.client_version;
-  if (title) title.textContent = 'Pink Pony ' + build.client_version;
+  if (title) title.textContent = 'Pink Pony ' + build.client_version + (beta ? ' (beta)' : '');
   updateInfo.latest = String(build.client_version || '');
   drawNotifications();
   if (list) {
@@ -821,13 +864,17 @@ async function loadTier() {
 
   const premium = status.premium === true || status.tier === 'pony' || status.tier === 'plus';
   const ends = premium && !status.lifetime ? (status.paid_until || '') : '';
+  const wasBeta = onBeta();
+  tierState.premium = premium;
+  paintBeta();
+  if (onBeta() !== wasBeta) { loadUpdate(); drawVersions(); }
 
   head.textContent = 'PREMIUM';
   if (premium) {
     body.textContent = ends ? 'Active until ' + until(ends) + '.' : 'Active - no end date.';
     button.textContent = ends ? 'ADD A MONTH' : 'MANAGE';
   } else {
-    body.textContent = 'The client, every mod and the Premium tags. $5.99 a month, never auto-charged.';
+    body.textContent = '$5.99 a month, never auto-charged.';
     button.textContent = 'GET PREMIUM';
   }
 
@@ -1291,6 +1338,20 @@ function paintSettings() {
   swap($('reopenOnClose'), settings.reopenOnClose !== false);
   $('reopenRow')?.classList.toggle('muted', !settings.closeOnLaunch);
   swap($('keepLogs'), settings.keepLogs);
+  paintBeta();
+}
+
+/* Beta updates (1.3.0): Premium only. Shown to everyone so it is clear what
+   Premium adds, switched off and explained for anyone without it. */
+function paintBeta() {
+  const sw = $('betaUpdates');
+  if (!sw || !settings) return;
+  swap(sw, !!settings.betaUpdates && tierState.premium);
+  $('betaRow')?.classList.toggle('muted', !tierState.premium);
+  const hint = $('betaHint');
+  if (hint) hint.textContent = tierState.premium
+    ? 'Get new builds first, including things still being tested. Turn off to go back to the normal build on your next PLAY.'
+    : 'Comes with Premium: new builds first, including things still being tested.';
 }
 
 /* A marker on the memory slider where most people should be: 6 GB, or half
@@ -1416,6 +1477,15 @@ function wireSettings() {
   $('closeOnLaunch').onclick = () => save({ closeOnLaunch: !settings.closeOnLaunch });
   $('reopenOnClose').onclick = () => save({ reopenOnClose: settings.reopenOnClose === false });
   $('keepLogs').onclick = () => save({ keepLogs: !settings.keepLogs });
+  $('betaUpdates').onclick = async () => {
+    if (!tierState.premium) { note('Beta updates come with Premium.', false); return; }
+    const on = !settings.betaUpdates;
+    await save({ betaUpdates: on }, on
+      ? 'Beta updates on - the newest test build installs on your next PLAY'
+      : 'Beta updates off - the normal build comes back on your next PLAY');
+    loadUpdate();
+    drawVersions();
+  };
 
   // Start with Windows lives in the OS, so it is asked, not remembered.
   const li = $('loginItem');
