@@ -46,6 +46,10 @@ contextBridge.exposeInMainWorld('pp', {
   shadersFolder:() => ipcRenderer.invoke('shaders-folder'),
   shaderGet:    (slug) => ipcRenderer.invoke('shaderpack-get', String(slug || '')),
   shaderUse:    (name) => ipcRenderer.invoke('shaderpack-use', String(name || '')),
+  // Cloud saves (1.3.1): status, a manual sync, and a push when one finishes.
+  cloudStatus:  () => ipcRenderer.invoke('cloud-status'),
+  cloudSync:    () => ipcRenderer.invoke('cloud-sync'),
+  onCloud:      (fn) => ipcRenderer.on('cloud', (_e, sum) => fn(sum)),
   showFolder:   (dir) => ipcRenderer.invoke('show-folder', dir),
 
   /*

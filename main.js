@@ -382,7 +382,10 @@ const DEFAULTS = {
   shaders: {},
   // Premium: ask the build function for the beta channel (1.3.0). The
   // function decides - without Premium it is ignored and the release comes.
-  betaUpdates: false
+  betaUpdates: false,
+  // Premium cloud saves (1.3.1): settings, macros, waypoints and schematics
+  // follow you to any PC. Off until the player turns it on.
+  cloudSync: false
 };
 
 /*
@@ -471,6 +474,7 @@ ipcMain.handle('settings-write', async (_e, patch) => {
   next.keepLogs = !!next.keepLogs;
   next.fullscreen = !!next.fullscreen;
   next.betaUpdates = !!next.betaUpdates;
+  next.cloudSync = !!next.cloudSync;
   // A window size is both or neither, and inside what a screen can be. These
   // end up as --width/--height on the game's command line.
   const w = Math.round(Number(next.windowWidth) || 0), h = Math.round(Number(next.windowHeight) || 0);
@@ -1939,6 +1943,230 @@ ipcMain.handle('shaderpack-use', async (_e, name) => {
   return n;
 });
 
+/*
+ * ---- CLOUD SAVES (1.3.1, Premium) -------------------------------------------
+ *
+ * The HUD layout and every module setting (modules.json), macros, waypoints
+ * and schematics follow the player to any PC. Synced BEFORE the game starts,
+ * so it opens with the newest copy, and AFTER it closes, so what changed goes
+ * up. Never while the game runs: the game owns those files then.
+ *
+ * WHICH COPY WINS, per file, using what this profile last synced
+ * (.pinkpony-cloud.json in the profile):
+ *   - only one side changed since the last sync   -> that side
+ *   - never synced here before                    -> the cloud (it is the
+ *                                                    account's copy; a fresh
+ *                                                    profile's files are just
+ *                                                    defaults or a carry)
+ *   - both changed                                -> the newer one
+ * The loser is never thrown away: it is copied into cloud-backups/<time>/ in
+ * the profile first.
+ *
+ * DELETING. A schematic removed here is marked trashed in the cloud (the file
+ * itself is kept there); on other PCs it moves to schematics/.trash/ - again
+ * moved, not deleted. Settings files are never "deleted": a missing one is
+ * fetched again.
+ *
+ * NEVER A REASON NOT TO PLAY: any failure is logged and the launch carries on.
+ */
+const CLOUD_JSON = ['config/pinkpony/modules.json', 'config/pinkpony/macros.json', 'config/pinkpony/waypoints.json'];
+const CLOUD_STATE = '.pinkpony-cloud.json';
+const CLOUD_MAX_SCHEM = 10 * 1024 * 1024;
+let cloudBusy = false;
+let cloudLast = null;      // { at, up, down, files, used, limit, note }
+
+async function cloudCall(code, body, seconds = 30) {
+  const ctl = new AbortController();
+  const timer = setTimeout(() => ctl.abort(), seconds * 1000);
+  try {
+    const res = await fetch(`${SB_URL}/functions/v1/cloud`, {
+      method: 'POST', signal: ctl.signal,
+      headers: { 'content-type': 'application/json', apikey: SB_KEY, Authorization: 'Bearer ' + SB_KEY },
+      body: JSON.stringify({ code, ...body })
+    });
+    return await res.json();
+  } finally { clearTimeout(timer); }
+}
+
+const isSchemPath = (p) => p.startsWith('schematics/');
+
+/* What this profile has that can go to the cloud: rel path -> {full, hash, mtime, bytes}. */
+function cloudLocal(gameDir) {
+  const out = {};
+  const add = (rel) => {
+    const full = path.join(gameDir, ...rel.split('/'));
+    try {
+      const st = fs.statSync(full);
+      if (!st.isFile()) return;
+      if (isSchemPath(rel) && st.size > CLOUD_MAX_SCHEM) return;     // too big to keep online
+      out[rel] = { full, hash: sha1Of(full), mtime: st.mtimeMs, bytes: st.size };
+    } catch { /* not there */ }
+  };
+  CLOUD_JSON.forEach(add);
+  try {
+    for (const f of fs.readdirSync(path.join(gameDir, 'schematics'))) {
+      if (f.startsWith('.') || !/\.(litematic|schem)$/i.test(f) || f.length > 110) continue;
+      if (/[\\/:*?"<>|\u0000-\u001f]/.test(f)) continue;
+      add('schematics/' + f);
+    }
+  } catch { /* no schematics folder yet */ }
+  return out;
+}
+
+function readCloudState(gameDir) {
+  try {
+    const s = JSON.parse(fs.readFileSync(path.join(gameDir, CLOUD_STATE), 'utf8'));
+    return { files: s && typeof s.files === 'object' ? s.files : {}, at: Number(s.at) || 0 };
+  } catch { return { files: {}, at: 0 }; }
+}
+
+function writeCloudState(gameDir, state) {
+  const f = path.join(gameDir, CLOUD_STATE);
+  fs.writeFileSync(f + '.tmp', JSON.stringify(state, null, 2));
+  fs.renameSync(f + '.tmp', f);
+}
+
+/* Copy a file we are about to replace into cloud-backups/<stamp>/, keeping its path. */
+function cloudBackup(gameDir, rel, stamp) {
+  const from = path.join(gameDir, ...rel.split('/'));
+  if (!fs.existsSync(from)) return;
+  const to = path.join(gameDir, 'cloud-backups', stamp, ...rel.split('/'));
+  fs.mkdirSync(path.dirname(to), { recursive: true });
+  fs.copyFileSync(from, to);
+}
+
+/* A schematic trashed in the cloud: moved aside here, never deleted. */
+function cloudTrashLocal(full) {
+  const dir = path.join(path.dirname(full), '.trash');
+  fs.mkdirSync(dir, { recursive: true });
+  let to = path.join(dir, path.basename(full));
+  for (let n = 2; fs.existsSync(to); n++) {
+    to = path.join(dir, path.basename(full).replace(/(\.[^.]+)$/, ` (${n})$1`));
+  }
+  fs.renameSync(full, to);
+}
+
+async function cloudDownload(code, gameDir, rel, wantHash) {
+  const r = await cloudCall(code, { action: 'get', path: rel });
+  if (!r?.ok || !r.url) throw new Error(r?.reason || 'no link');
+  const res = await fetch(r.url);
+  if (!res.ok) throw new Error('download ' + res.status);
+  const buf = Buffer.from(await res.arrayBuffer());
+  const got = require('crypto').createHash('sha1').update(buf).digest('hex');
+  if (wantHash && got !== wantHash) throw new Error('changed while downloading');
+  const full = path.join(gameDir, ...rel.split('/'));
+  fs.mkdirSync(path.dirname(full), { recursive: true });
+  fs.writeFileSync(full + '.part', buf);
+  fs.renameSync(full + '.part', full);
+  return got;
+}
+
+async function cloudUpload(code, rel, file) {
+  const buf = fs.readFileSync(file.full);
+  const r = await cloudCall(code, { action: 'put', path: rel, hash: file.hash, mtime: Math.round(file.mtime), data: buf.toString('base64') }, 120);
+  if (!r?.ok) throw new Error(r?.reason || 'upload failed');
+  return file.hash;
+}
+
+/* One full reconcile of this profile with the cloud. Returns a summary; never throws. */
+async function cloudSync(gameDir, code) {
+  if (cloudBusy) return { ok: false, note: 'Already syncing.' };
+  if (!code) return { ok: false, note: 'No access code saved.' };
+  cloudBusy = true;
+  const sum = { ok: false, up: 0, down: 0, files: 0, used: 0, limit: 0, note: '', at: Date.now() };
+  try {
+    const list = await cloudCall(code, { action: 'list' });
+    if (!list?.ok) {
+      sum.note = { premium_only: 'Cloud saves come with Premium.', invalid_code: "That access code isn't active." }[list?.reason]
+              || 'Could not reach cloud saves.';
+      return sum;
+    }
+    const remote = {};
+    for (const r of list.files || []) remote[r.path] = r;
+    const state = readCloudState(gameDir);
+    const local = cloudLocal(gameDir);
+    const stamp = new Date().toISOString().replace(/[:.]/g, '-');
+    const problems = [];
+
+    for (const rel of new Set([...Object.keys(remote), ...Object.keys(local)])) {
+      try {
+        const L = local[rel]?.hash || null;
+        const R = remote[rel];
+        const S = state.files[rel] || null;
+
+        if (R && R.trashed) {
+          if (L && L === S) { cloudTrashLocal(local[rel].full); delete state.files[rel]; }
+          else if (L) { state.files[rel] = await cloudUpload(code, rel, local[rel]); sum.up++; }  // changed here: bring it back
+          else delete state.files[rel];
+          continue;
+        }
+        const C = R ? R.hash : null;
+        if (L && C && L === C) { state.files[rel] = C; continue; }
+        if (!L && C) {
+          if (isSchemPath(rel) && S && S === C) {                     // deleted here since the last sync
+            await cloudCall(code, { action: 'trash', path: rel });
+            delete state.files[rel];
+          } else {
+            state.files[rel] = await cloudDownload(code, gameDir, rel, C);
+            sum.down++;
+          }
+          continue;
+        }
+        if (L && !C) { state.files[rel] = await cloudUpload(code, rel, local[rel]); sum.up++; continue; }
+
+        // Both sides have it and they differ.
+        let cloudWins;
+        if (S && L === S) cloudWins = true;                  // only the cloud changed
+        else if (S && C === S) cloudWins = false;            // only this PC changed
+        else if (!S) cloudWins = true;                       // never synced here: the account's copy
+        else cloudWins = Date.parse(R.updated_at || 0) >= local[rel].mtime;   // both changed: newest
+        if (cloudWins) {
+          cloudBackup(gameDir, rel, stamp);
+          state.files[rel] = await cloudDownload(code, gameDir, rel, C);
+          sum.down++;
+        } else {
+          state.files[rel] = await cloudUpload(code, rel, local[rel]);
+          sum.up++;
+        }
+      } catch (e) {
+        problems.push(`${rel.split('/').pop()}: ${e?.message || e}`);
+      }
+    }
+    state.at = Date.now();
+    writeCloudState(gameDir, state);
+    sum.ok = true;
+    sum.files = Object.keys(state.files).length;
+    const after = await cloudCall(code, { action: 'list' }).catch(() => null);
+    sum.used = Number(after?.used ?? list.used) || 0;
+    sum.limit = Number(list.limit) || 0;
+    if (problems.length) {
+      sum.note = problems.length === 1 ? `Skipped ${problems[0]}` : `Skipped ${problems.length} files (${problems[0]}, …)`;
+      addEvent('cloud', 'Cloud saves: ' + sum.note, '');
+    }
+    return sum;
+  } catch (e) {
+    sum.note = 'Cloud saves: ' + (e?.message || e);
+    return sum;
+  } finally {
+    cloudBusy = false;
+    cloudLast = sum;
+    if (win && !win.isDestroyed()) win.webContents.send('cloud', sum);
+  }
+}
+
+ipcMain.handle('cloud-status', async () => {
+  const s = readSettings();
+  const state = readCloudState(profileDir(s));
+  return { on: !!s.cloudSync, busy: cloudBusy, last: cloudLast,
+           lastAt: state.at || 0, files: Object.keys(state.files).length };
+});
+
+ipcMain.handle('cloud-sync', async () => {
+  if (gameRunning) return { ok: false, note: 'Close the game first - it is using those files.' };
+  const s = readSettings();
+  return cloudSync(profileDir(s), s.code);
+});
+
 async function ensureClient(modsDir, mcVersion, code, beta = false) {
   if (!code) {
     throw new Error('No access code saved - put yours in Settings first.');
@@ -2511,6 +2739,11 @@ async function launchGame(opts) {
   if (shaderNote) addEvent('shaders', shaderNote, profile.name);
   const java = await ensureJava(root, mcVersion, settings.javaPath);
   carryIfNew(settings, profile);
+  if (settings.cloudSync) {
+    say(64, 'Syncing your cloud saves…');
+    // Never longer than this before the game starts; it finishes on its own.
+    await Promise.race([cloudSync(gameDir, settings.code), new Promise((r) => setTimeout(r, 25000))]);
+  }
   const serversAt = serversIn(settings, profile);
   seedCode(gameDir, settings.code);
   takeSwitchRequest(gameDir);            // a leftover from a crash must not fire later
@@ -2557,6 +2790,9 @@ async function launchGame(opts) {
   launcher.on('close', (code) => {
     gameRunning = false;
     serversOut(settings, profile, serversAt);
+    // What changed in game goes up now (1.3.1). Not awaited: closing the game
+    // must not wait on the network.
+    if (readSettings().cloudSync) cloudSync(gameDir, settings.code).catch(() => {});
     // Written into the same log as the game's output, so a session that ends
     // without "Stopping!" says how it ended instead of just stopping.
     if (settings.keepLogs) {

@@ -867,6 +867,7 @@ async function loadTier() {
   const wasBeta = onBeta();
   tierState.premium = premium;
   paintBeta();
+  loadCloud();
   if (onBeta() !== wasBeta) { loadUpdate(); drawVersions(); }
 
   head.textContent = 'PREMIUM';
@@ -1339,7 +1340,51 @@ function paintSettings() {
   $('reopenRow')?.classList.toggle('muted', !settings.closeOnLaunch);
   swap($('keepLogs'), settings.keepLogs);
   paintBeta();
+  paintCloud();
 }
+
+/* Cloud saves (1.3.1): Premium. The launcher syncs when you press PLAY and
+   when the game closes; this row shows the last result and can sync now. */
+let cloudState = { last: null, lastAt: 0, files: 0, busy: false };
+function ago(ms) {
+  const s = Math.round((Date.now() - ms) / 1000);
+  if (s < 60) return 'just now';
+  if (s < 3600) return Math.round(s / 60) + ' min ago';
+  if (s < 86400) return Math.round(s / 3600) + ' h ago';
+  return new Date(ms).toLocaleDateString();
+}
+function paintCloud() {
+  const sw = $('cloudSync');
+  if (!sw || !settings) return;
+  const on = !!settings.cloudSync && tierState.premium;
+  swap(sw, on);
+  $('cloudRow')?.classList.toggle('muted', !tierState.premium);
+  const now = $('cloudNow');
+  if (now) { now.hidden = !on; now.disabled = cloudState.busy; now.textContent = cloudState.busy ? 'Syncing…' : 'Sync now'; }
+  const hint = $('cloudHint');
+  if (!hint) return;
+  if (!tierState.premium) {
+    hint.textContent = 'Comes with Premium: your HUD layout, settings, macros, waypoints and schematics on any PC.';
+  } else if (!on) {
+    hint.textContent = 'Your HUD layout, settings, macros, waypoints and schematics follow you to any PC. Synced when you press PLAY and when the game closes.';
+  } else {
+    const last = cloudState.last;
+    const at = (last && last.ok ? last.at : 0) || cloudState.lastAt;
+    const mb = last && last.limit ? ` · ${(last.used / 1048576).toFixed(1)} of ${Math.round(last.limit / 1048576)} MB` : '';
+    hint.textContent = (at ? `Synced ${ago(at)} · ${cloudState.files || last?.files || 0} files${mb}` : 'On - syncs the next time you press PLAY.')
+      + (last && last.note ? ' · ' + last.note : '');
+  }
+}
+async function loadCloud() {
+  const st = await window.pp?.cloudStatus?.().catch(() => null);
+  if (st) cloudState = { ...cloudState, ...st };
+  paintCloud();
+}
+window.pp?.onCloud?.((sum) => {
+  cloudState.last = sum; cloudState.busy = false;
+  if (sum && sum.ok) { cloudState.lastAt = sum.at; cloudState.files = sum.files; }
+  paintCloud();
+});
 
 /* Beta updates (1.3.0): Premium only. Shown to everyone so it is clear what
    Premium adds, switched off and explained for anyone without it. */
@@ -1477,6 +1522,22 @@ function wireSettings() {
   $('closeOnLaunch').onclick = () => save({ closeOnLaunch: !settings.closeOnLaunch });
   $('reopenOnClose').onclick = () => save({ reopenOnClose: settings.reopenOnClose === false });
   $('keepLogs').onclick = () => save({ keepLogs: !settings.keepLogs });
+  const runCloud = async () => {
+    cloudState.busy = true; paintCloud();
+    const sum = await window.pp.cloudSync().catch(() => null);
+    cloudState.busy = false;
+    if (sum) { cloudState.last = sum; if (sum.ok) { cloudState.lastAt = sum.at; cloudState.files = sum.files; } }
+    paintCloud();
+    if (sum && !sum.ok && sum.note) note(sum.note, false);
+    else if (sum && sum.ok) note(`Cloud saves synced - ${sum.down} down, ${sum.up} up`);
+  };
+  $('cloudSync').onclick = async () => {
+    if (!tierState.premium) { note('Cloud saves come with Premium.', false); return; }
+    const on = !settings.cloudSync;
+    await save({ cloudSync: on }, on ? 'Cloud saves on - syncing now' : 'Cloud saves off - nothing more is sent');
+    if (on) runCloud();
+  };
+  $('cloudNow').onclick = () => runCloud();
   $('betaUpdates').onclick = async () => {
     if (!tierState.premium) { note('Beta updates come with Premium.', false); return; }
     const on = !settings.betaUpdates;
@@ -1581,58 +1642,99 @@ const MC_COLOURS = {
 };
 
 function mcHtml(raw) {
-  const text = String(raw || '');
-  let out = '';
-  let st = { colour: '', bold: false, italic: false, under: false, strike: false, obf: false };
-  let buf = '';
-
-  const flush = () => {
-    if (!buf) return;
+  // Animated codes (client 2.64.0) come out as one span per letter with
+  // data-fx; fxTick() below repaints them, with the same maths as the game.
+  return parseTag(raw).map((p) => {
     const css = [];
-    if (st.colour) css.push('color:' + st.colour);
-    if (st.bold) css.push('font-weight:700');
-    if (st.italic) css.push('font-style:italic');
-    const deco = [st.under && 'underline', st.strike && 'line-through'].filter(Boolean);
+    const data = p.fx ? ` data-fx="${p.fx}" data-i="${p.i}" data-n="${p.n}" data-a="${p.a}" data-b="${p.b}" data-base="${p.base == null ? '' : p.base}"` : '';
+    if (p.fx) css.push('color:' + fxColour(p.fx, p.i, p.n, 0, p.a, p.b, p.base));
+    else if (p.ck) css.push('color:' + MC_COLOURS[p.ck]);
+    if (p.bold) css.push('font-weight:700');
+    if (p.italic) css.push('font-style:italic');
+    const deco = [p.under && 'underline', p.strike && 'line-through'].filter(Boolean);
     if (deco.length) css.push('text-decoration:' + deco.join(' '));
-    out += `<span class="${st.obf ? 'mcobf' : ''}" style="${css.join(';')}">${esc(buf)}</span>`;
-    buf = '';
-  };
+    return `<span class="${p.obf ? 'mcobf' : ''}"${data} style="${css.join(';')}">${esc(p.text)}</span>`;
+  }).join('') || esc(String(raw || ''));
+}
 
+/* ---------- animated tag codes (client 2.64.0) ----------
+   The same three codes and the same maths as the game's TagFx:
+     &q    rainbow sliding along the letters
+     &gXY  gradient from colour X to colour Y, flowing (e.g. &gdb)
+     &s    a bright band sweeping across the current colour
+   They start a run like a colour code does (and reset formats); &l &o &n &m &k
+   after them apply on top. parseTag() turns a tag into pieces; each animated
+   letter is its own piece carrying what fxColour() needs every frame. */
+const FX_PAL = { "0": 0x000000, "1": 0x0000AA, "2": 0x00AA00, "3": 0x00AAAA, "4": 0xAA0000, "5": 0xAA00AA,
+  "6": 0xFFAA00, "7": 0xAAAAAA, "8": 0x555555, "9": 0x5555FF, a: 0x55FF55, b: 0x55FFFF, c: 0xFF5555,
+  d: 0xFF55FF, e: 0xFFFF55, f: 0xFFFFFF };
+function parseTag(raw) {
+  const text = raw == null ? "" : String(raw), out = [];
+  let colour = null, ck = null, fx = "", a = 0, b = 0, bold = false, italic = false, under = false, strike = false, obf = false;
+  let run = [], buf = "";
+  const fmt = () => ({ colour, ck, bold, italic, under, strike, obf });
+  const flush = () => { if (buf) { out.push({ text: buf, ...fmt() }); buf = ""; } };
+  const endRun = () => { run.forEach((p, i) => { p.i = i; p.n = run.length; out.push(p); }); run = []; };
   for (let i = 0; i < text.length; i++) {
     const ch = text[i];
-    // Section sign as well as ampersand: the same string turns up both ways
-    // depending on whether it came from Discord or straight out of the game.
-    if ((ch === '&' || ch === '§') && i + 1 < text.length) {
+    if ((ch === "&" || ch === "§") && i + 1 < text.length) {
       const c = text[i + 1].toLowerCase();
-      if (MC_COLOURS[c]) {
-        flush();
-        // A colour resets formatting in Minecraft. Getting this wrong makes
-        // every tag after the first bold code stay bold forever.
-        st = { colour: MC_COLOURS[c], bold: false, italic: false,
-               under: false, strike: false, obf: false };
+      const isG = c === "g" && i + 3 < text.length && FX_PAL[text[i + 2].toLowerCase()] !== undefined
+                  && FX_PAL[text[i + 3].toLowerCase()] !== undefined;
+      if (FX_PAL[c] !== undefined || c === "r" || c === "q" || c === "s" || isG) {
+        flush(); endRun();
+        bold = italic = under = strike = obf = false;
+        if (FX_PAL[c] !== undefined) { colour = FX_PAL[c]; ck = c; fx = ""; }
+        else if (c === "r") { colour = null; ck = null; fx = ""; }
+        else if (c === "q") fx = "q";
+        else if (c === "s") fx = "s";
+        else { fx = "g"; a = FX_PAL[text[i + 2].toLowerCase()]; b = FX_PAL[text[i + 3].toLowerCase()]; i += 2; }
         i++; continue;
       }
-      if ('klmnor'.includes(c)) {
+      if ("lonmk".includes(c)) {
         flush();
-        if (c === 'r') st = { colour: '', bold: false, italic: false,
-                              under: false, strike: false, obf: false };
-        else if (c === 'k') st.obf = true;
-        else if (c === 'l') st.bold = true;
-        else if (c === 'm') st.strike = true;
-        else if (c === 'n') st.under = true;
-        else if (c === 'o') st.italic = true;
+        if (c === "l") bold = true; else if (c === "o") italic = true; else if (c === "n") under = true;
+        else if (c === "m") strike = true; else obf = true;
         i++; continue;
       }
     }
-    buf += ch;
+    if (fx) run.push({ text: ch, ...fmt(), fx, a, b, base: colour });
+    else buf += ch;
   }
-  flush();
-  return out || esc(text);
+  flush(); endRun();
+  return out;
 }
+function fxHex(n) { return "#" + (n & 0xFFFFFF).toString(16).padStart(6, "0"); }
+function fxMix(x, y, f) {
+  f = Math.max(0, Math.min(1, f));
+  const m = (s) => Math.round(((x >> s) & 255) * (1 - f) + ((y >> s) & 255) * f);
+  return (m(16) << 16) | (m(8) << 8) | m(0);
+}
+function fxHsv(h, s, v) {
+  const i = Math.floor(h * 6), f = h * 6 - i, p = v * (1 - s), q = v * (1 - f * s), u = v * (1 - (1 - f) * s);
+  const [r, g, b] = [[v, u, p], [q, v, p], [p, v, u], [p, q, v], [u, p, v], [v, p, q]][((i % 6) + 6) % 6];
+  return (Math.round(r * 255) << 16) | (Math.round(g * 255) << 8) | Math.round(b * 255);
+}
+function fxColour(fx, i, n, t, a, b, base) {
+  if (fx === "q") { let h = (i * 0.07 - t * 0.35) % 1; if (h < 0) h += 1; return fxHex(fxHsv(h, 0.75, 1)); }
+  if (fx === "g") { const p = n <= 1 ? 0 : i / (n - 1); const f = (p * 0.5 + t * 0.25) % 1; return fxHex(fxMix(a, b, f < 0.5 ? f * 2 : 2 - f * 2)); }
+  const c = base == null ? 0xFFFFFF : base, cyc = 2.6, pos = ((t % cyc) / cyc) * 1.8 - 0.4;
+  const p = n <= 1 ? 0.5 : i / (n - 1);
+  return fxHex(fxMix(c, 0xFFFFFF, 0.8 * Math.max(0, 1 - Math.abs(p - pos) * 5)));
+}
+function fxTick() {
+  const t = (Date.now() % 600000) / 1000;
+  document.querySelectorAll("[data-fx]").forEach((el) => {
+    const d = el.dataset;
+    el.style.color = fxColour(d.fx, +d.i, +d.n, t, +d.a, +d.b, d.base === "" ? null : +d.base);
+  });
+}
+
+setInterval(fxTick, 60);
 
 /** A tag with its codes taken out, for searching and for the activity line. */
 function mcPlain(raw) {
-  return String(raw || '').replace(/[&§][0-9a-fk-orA-FK-OR]/g, '');
+  return String(raw || '').replace(/[&§][gG][0-9a-fA-F]{2}/g, '').replace(/[&§][0-9a-fk-orqsA-FK-ORQS]/g, '');
 }
 
 /* Written to BOTH notes on purpose. One lives on the cosmetics page and one in
