@@ -1990,6 +1990,22 @@ async function cloudCall(code, body, seconds = 30) {
 
 const isSchemPath = (p) => p.startsWith('schematics/');
 
+/*
+ * ONLY THESE PATHS ARE EVER WRITTEN (1.3.3). The cloud function already
+ * refuses anything else, but the launcher no longer takes its word for it: a
+ * path that came back from the server is checked here again before a byte is
+ * written. If the server were ever tampered with, the worst it could hand us is
+ * a settings file or a schematic in the game folder - never "../../Startup/x.bat",
+ * never a .jar in mods, never anything that runs.
+ */
+const CLOUD_SCHEM_RE = /^schematics\/[^\/\\\u0000-\u001f:*?"<>|]{1,100}\.(litematic|schem)$/i;
+function cloudPathOk(rel) {
+  if (typeof rel !== 'string' || rel.includes('..') || rel.includes('//')) return false;
+  const name = rel.split('/').pop() || '';
+  if (name.startsWith('.')) return false;
+  return CLOUD_JSON.includes(rel) || CLOUD_SCHEM_RE.test(rel);
+}
+
 /* What this profile has that can go to the cloud: rel path -> {full, hash, mtime, bytes}. */
 function cloudLocal(gameDir) {
   const out = {};
@@ -2047,6 +2063,9 @@ function cloudTrashLocal(full) {
 }
 
 async function cloudDownload(code, gameDir, rel, wantHash) {
+  if (!cloudPathOk(rel)) throw new Error('refused a path outside the cloud list: ' + String(rel).slice(0, 80));
+  const full0 = path.resolve(gameDir, ...rel.split('/'));
+  if (!full0.startsWith(path.resolve(gameDir) + path.sep)) throw new Error('refused a path outside the game folder');
   const r = await cloudCall(code, { action: 'get', path: rel });
   if (!r?.ok || !r.url) throw new Error(r?.reason || 'no link');
   const res = await fetch(r.url);
@@ -2082,7 +2101,7 @@ async function cloudSync(gameDir, code) {
       return sum;
     }
     const remote = {};
-    for (const r of list.files || []) remote[r.path] = r;
+    for (const r of list.files || []) if (cloudPathOk(r.path)) remote[r.path] = r;
     const state = readCloudState(gameDir);
     const local = cloudLocal(gameDir);
     const stamp = new Date().toISOString().replace(/[:.]/g, '-');
