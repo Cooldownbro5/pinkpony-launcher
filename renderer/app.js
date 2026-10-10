@@ -204,7 +204,10 @@ function drawVersions() {
     for (let i = 0; i < 3; i++) if ((pb[i] || 0) !== (pa[i] || 0)) return (pb[i] || 0) - (pa[i] || 0);
     return 0;
   };
-  const versions = [...new Set(mcVersions)].sort(byNum);
+  // On the beta channel, a version with only a beta build is offered too
+  // (1.3.8) - the 1.8.9 beta was published to the beta channel first and the
+  // switch did nothing, because only release rows made a card.
+  const versions = [...new Set([...mcVersions, ...(onBeta() ? Object.keys(BETA_BUILDS) : [])])].sort(byNum);
   const newest = versions[0];
 
   versions.forEach((v) => {
