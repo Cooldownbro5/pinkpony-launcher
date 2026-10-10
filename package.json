@@ -1,6 +1,6 @@
 {
   "name": "pinkpony-launcher",
-  "version": "1.3.5",
+  "version": "1.3.6",
   "description": "Pink Pony launcher",
   "main": "main.js",
   "scripts": {
@@ -23,6 +23,12 @@
     "appId": "com.pinkpony.launcher",
     "productName": "Pink Pony",
     "copyright": "Copyright (c) 2026 Pink Pony",
+    "electronFuses": {
+      "runAsNode": false,
+      "enableNodeOptionsEnvironmentVariable": false,
+      "enableNodeCliInspectArguments": false,
+      "onlyLoadAppFromAsar": true
+    },
     "directories": {
       "output": "dist",
       "buildResources": "build"

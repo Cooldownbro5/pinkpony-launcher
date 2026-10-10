@@ -54,7 +54,29 @@ function createWindow() {
     }
   });
   win.loadFile(path.join(__dirname, 'renderer', 'index.html'));
+
+  // The launcher window only ever shows our own page. It never navigates
+  // anywhere else and never opens windows of its own; links go to the
+  // system browser through 'open-external' below (1.3.6).
+  const home = win.webContents.getURL.bind(win.webContents);
+  win.webContents.on('will-navigate', (e, url) => { if (url !== home()) e.preventDefault(); });
+  win.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
 }
+
+/*
+ * Ask for nothing we do not use (1.3.6). Electron says yes to every web
+ * permission by default - camera, microphone, location, notifications,
+ * MIDI, screen capture. The launcher uses none of them, so every request
+ * is refused, quietly, and Windows never shows a "Pink Pony wants to use
+ * your camera" prompt. Copying to the clipboard is the one thing kept.
+ * The Microsoft sign-in window shares this session and needs none either.
+ */
+const ALLOWED_PERMS = new Set(['clipboard-sanitized-write']);
+app.whenReady().then(() => {
+  const { session } = require('electron');
+  session.defaultSession.setPermissionRequestHandler((_wc, perm, cb) => cb(ALLOWED_PERMS.has(perm)));
+  session.defaultSession.setPermissionCheckHandler((_wc, perm) => ALLOWED_PERMS.has(perm));
+});
 
 /*
  * ONE LAUNCHER AT A TIME.
