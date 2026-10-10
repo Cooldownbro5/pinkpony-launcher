@@ -1719,6 +1719,97 @@ async function download(url, dest) {
   fs.renameSync(tmp, dest);
 }
 
+/*
+ * 1.8.9 IS FORGE, NOT FABRIC (launcher 1.3.7).
+ *
+ * Fabric has no 1.8.9, and the 1.8.9 Pink Pony is a Forge mod. Forge on 1.8.9
+ * is the same idea as Fabric - a version profile laid over vanilla - but it
+ * needs its libraries placed by hand, because the profile Forge ships points
+ * at files.minecraftforge.net/maven, which is gone.
+ *
+ * So, the way Forge's own installer would: the universal jar is fetched from
+ * maven.minecraftforge.net into libraries/, its version.json is read out of
+ * it, every client library it lists is fetched (trying the Forge maven, then
+ * Mojang's, then Maven Central - the Scala jars have moved about over the
+ * years), and a version profile is written under versions/ with no URLs left
+ * in it. minecraft-launcher-core then launches it as a custom version, like
+ * Fabric, and finds every file already in place.
+ *
+ * Only the Forge build pinned here is ever installed - 11.15.1.2318, the last
+ * 1.8.9 Forge, the one Pink Pony 1.8.9 is built and tested against.
+ */
+const FORGE_BUILDS = { '1.8.9': '1.8.9-11.15.1.2318-1.8.9' };
+const LIB_MIRRORS = ['https://maven.minecraftforge.net/', 'https://libraries.minecraft.net/', 'https://repo1.maven.org/maven2/'];
+
+function isForgeLine(mcVersion) { return Object.prototype.hasOwnProperty.call(FORGE_BUILDS, mcVersion); }
+
+function mavenPath(name) {
+  const [g, a, v, c] = String(name).split(':');
+  return `${g.replace(/\./g, '/')}/${a}/${v}/${a}-${v}${c ? '-' + c : ''}.jar`;
+}
+
+/** The first of these URLs that answers, saved to dest. */
+async function downloadFirst(urls, dest) {
+  let last = null;
+  for (const u of urls) {
+    try { await download(u, dest); return; } catch (e) { last = e; }
+  }
+  throw last || new Error('nowhere to download it from');
+}
+
+async function ensureForge(root, mcVersion) {
+  const fv = FORGE_BUILDS[mcVersion];
+  if (!fv) throw new Error(`There is no Forge build for ${mcVersion}.`);
+  const id = `${mcVersion}-forge${fv}`;         // the name Forge's own installer uses
+  const libDir = path.join(root, 'libraries');
+  const forgeJar = path.join(libDir, ...mavenPath(`net.minecraftforge:forge:${fv}`).split('/'));
+  const file = path.join(root, 'versions', id, `${id}.json`);
+
+  // Installed already, and nothing it needs has gone missing since.
+  if (fs.existsSync(file) && fs.existsSync(forgeJar)) {
+    try {
+      const have = JSON.parse(fs.readFileSync(file, 'utf8'));
+      if ((have.libraries || []).every((l) => fs.existsSync(path.join(libDir, ...mavenPath(l.name).split('/'))))) return id;
+    } catch { /* rewrite it below */ }
+  }
+
+  say(8, 'Installing Forge…');
+  if (!fs.existsSync(forgeJar)) {
+    await downloadFirst([`https://maven.minecraftforge.net/net/minecraftforge/forge/${fv}/forge-${fv}-universal.jar`], forgeJar);
+  }
+  const raw = zipRead(fs.readFileSync(forgeJar), 'version.json');
+  if (!raw) throw new Error('The Forge download is not a Forge jar.');
+  const info = JSON.parse(raw.toString('utf8'));
+
+  const libs = [];
+  const wanted = (info.libraries || []).filter((l) => l && l.name && l.clientreq !== false);
+  let n = 0;
+  for (const lib of wanted) {
+    n++;
+    const rel = mavenPath(lib.name);
+    const dest = path.join(libDir, ...rel.split('/'));
+    if (!lib.name.startsWith('net.minecraftforge:forge:') && !fs.existsSync(dest)) {
+      say(8 + Math.round((n / wanted.length) * 6), `Installing Forge… (${n}/${wanted.length})`);
+      const own = lib.url ? String(lib.url).replace(/^https?:\/\/files\.minecraftforge\.net\/maven\/?/, 'https://maven.minecraftforge.net/') : null;
+      const bases = [...new Set([own, ...LIB_MIRRORS].filter(Boolean).map((b) => (b.endsWith('/') ? b : b + '/')))];
+      try { await downloadFirst(bases.map((b) => b + rel), dest); }
+      catch (e) { throw new Error(`Could not download ${lib.name} for Forge (${e?.message || e}).`); }
+    }
+    libs.push({ name: lib.name });          // no url: everything is in place already
+  }
+
+  const profile = {
+    id, inheritsFrom: mcVersion, jar: mcVersion, type: 'release',
+    mainClass: info.mainClass || 'net.minecraft.launchwrapper.Launch',
+    minecraftArguments: info.minecraftArguments,
+    libraries: libs
+  };
+  fs.mkdirSync(path.dirname(file), { recursive: true });
+  fs.writeFileSync(file, JSON.stringify(profile, null, 2));
+  addEvent('up', `Installed Forge for ${mcVersion}`, fv);
+  return id;
+}
+
 async function ensureFabricApi(modsDir, mcVersion) {
   const existing = fs.readdirSync(modsDir).find((f) => /^fabric-api.*\.jar$/i.test(f));
   if (existing) return existing;
@@ -2837,13 +2928,18 @@ async function launchOne(opts, held) {
   fs.mkdirSync(modsDir, { recursive: true });
 
   say(4, 'Preparing…');
-  const custom = await ensureFabric(root, mcVersion);
+  // 1.8.9 is Forge; everything newer is Fabric (see ensureForge).
+  const forge = isForgeLine(mcVersion);
+  const custom = forge ? await ensureForge(root, mcVersion) : await ensureFabric(root, mcVersion);
   await ensureClient(modsDir, mcVersion, settings.code, !!settings.betaUpdates);
-  await ensureFabricApi(modsDir, mcVersion);
-  const shadersOn = !!settings.shaders?.[profile.id];
+  if (!forge) await ensureFabricApi(modsDir, mcVersion);
+  // Shaders are Sodium + Iris, which are Fabric mods - not on 1.8.9.
+  const shadersOn = !forge && !!settings.shaders?.[profile.id];
   let shaderNote = '';
-  try { shaderNote = await ensureShaders(modsDir, mcVersion, shadersOn); }
-  catch (e) { shaderNote = `Could not get shaders (${e?.message || e}) - playing without them.`; }
+  if (!forge) {
+    try { shaderNote = await ensureShaders(modsDir, mcVersion, shadersOn); }
+    catch (e) { shaderNote = `Could not get shaders (${e?.message || e}) - playing without them.`; }
+  }
   if (shaderNote) addEvent('shaders', shaderNote, profile.name);
   const java = await ensureJava(root, mcVersion, settings.javaPath);
   if (!extra) carryIfNew(settings, profile);
@@ -2945,7 +3041,10 @@ async function launchOne(opts, held) {
   try {
     child = await launcher.launch({
       root,
-      authorization: account.token,
+      // 1.8.9 passes --userProperties, and msmc's {} would be dropped from the
+      // command line (minecraft-launcher-core only keeps strings), leaving the
+      // flag with no value - which 1.8.9 refuses to start with.
+      authorization: forge ? { ...account.token, user_properties: '{}' } : account.token,
       version: { number: mcVersion, type: 'release', custom },
       memory: { max: `${settings.memory}M`, min: '1024M' },
       javaPath: java.path,     // chosen per version above - see ensureJava
@@ -2959,7 +3058,8 @@ async function launchOne(opts, held) {
       // gameDirectory is what makes a profile a profile: the game writes its
       // mods, config and saves here while root keeps the shared downloads.
       overrides: { detached: false, gameDirectory: gameDir },
-      quickPlay: joinServer ? { type: 'multiplayer', identifier: joinServer } : undefined,
+      // 1.8.9 predates Quick Play: it takes --server / --port instead.
+      quickPlay: joinServer ? { type: forge ? 'legacy' : 'multiplayer', identifier: joinServer } : undefined,
       // Settings > Game window, as Minecraft's own --fullscreen / --width /
       // --height. NOT through MCLC's `window` option: in 3.17 its width and
       // height branch is an arrow function that is never called, so a size
