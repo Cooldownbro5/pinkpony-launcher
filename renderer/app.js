@@ -569,6 +569,11 @@ window.pp?.onProgress(({ percent, text, done, failed }) => {
   // "2.60.4 is out - you have 2.60.2" after 2.60.4 was installed and played,
   // until the launcher was restarted.
   if (done || failed || text === 'Launched') loadJars();
+  // More than one game at once: PLAY is free again as soon as this one is up.
+  if (text === 'Launched' && settings?.multiInstance) {
+    play.disabled = false;
+    setTimeout(() => { progress.hidden = true; }, 1400);
+  }
   if (done || failed) {
     play.disabled = false;
     if (done) setTimeout(() => { progress.hidden = true; }, 1400);
@@ -1469,6 +1474,7 @@ function paintSettings() {
   swap($('fullscreen'), settings.fullscreen);
   swap($('closeOnLaunch'), settings.closeOnLaunch);
   swap($('reopenOnClose'), settings.reopenOnClose !== false);
+  swap($('multiInstance'), !!settings.multiInstance);
   $('reopenRow')?.classList.toggle('muted', !settings.closeOnLaunch);
   swap($('keepLogs'), settings.keepLogs);
   paintBeta();
@@ -1653,6 +1659,9 @@ function wireSettings() {
     !settings.fullscreen ? 'Starts in fullscreen' : 'Starts in a window');
   $('closeOnLaunch').onclick = () => save({ closeOnLaunch: !settings.closeOnLaunch });
   $('reopenOnClose').onclick = () => save({ reopenOnClose: settings.reopenOnClose === false });
+  $('multiInstance').onclick = () => save({ multiInstance: !settings.multiInstance },
+    !settings.multiInstance ? 'Switch account, then press PLAY to start another game'
+                            : 'One game at a time');
   $('keepLogs').onclick = () => save({ keepLogs: !settings.keepLogs });
   const runCloud = async () => {
     cloudState.busy = true; paintCloud();

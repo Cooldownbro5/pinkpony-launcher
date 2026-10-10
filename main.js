@@ -385,7 +385,10 @@ const DEFAULTS = {
   betaUpdates: false,
   // Premium cloud saves (1.3.1): settings, macros and waypoints follow you to
   // any PC (schematics left in 1.3.3). Off until the player turns it on.
-  cloudSync: false
+  cloudSync: false,
+  // More than one game at once (1.3.4): each extra game gets its own copy of
+  // the profile folder, and every game must be a different account.
+  multiInstance: false
 };
 
 /*
@@ -475,6 +478,7 @@ ipcMain.handle('settings-write', async (_e, patch) => {
   next.fullscreen = !!next.fullscreen;
   next.betaUpdates = !!next.betaUpdates;
   next.cloudSync = !!next.cloudSync;
+  next.multiInstance = !!next.multiInstance;
   // A window size is both or neither, and inside what a screen can be. These
   // end up as --width/--height on the game's command line.
   const w = Math.round(Number(next.windowWidth) || 0), h = Math.round(Number(next.windowHeight) || 0);
@@ -1063,7 +1067,44 @@ function carryIfNew(settings, profile) {
   }
 }
 
-let gameRunning = false;
+let gameRunning = false;   // ANY game - every "close the game first" check reads this
+
+/*
+ * MORE THAN ONE GAME AT ONCE (1.3.4, Settings > "More than one game at once").
+ *
+ * Two games in one folder would fight over every file they both write -
+ * options.txt, the HUD layout, waypoints, macros - and whichever closed last
+ * would win. So the first game of a profile uses the profile's own folder, as
+ * it always has, and each extra one gets a folder of its own beside it
+ * (profiles/<id>-2, -3 ...), made the first time from a copy of the main one's
+ * settings and config. Its server list is refreshed from the main one each
+ * launch. Cloud saves and the shared server list only follow the MAIN game.
+ *
+ * Every game must be a different Microsoft account: the same account twice is
+ * kicked by any server ("logged in from another location").
+ */
+const MAX_GAMES = 4;
+const games = new Map();   // gameDir -> { uuid, name }
+function refreshRunning() { gameRunning = games.size > 0; }
+
+function seedInstance(baseDir, dir) {
+  try {
+    fs.mkdirSync(dir, { recursive: true });
+    const marker = path.join(dir, '.pinkpony-instance');
+    if (!fs.existsSync(marker)) {
+      const opt = path.join(baseDir, 'options.txt');
+      if (fs.existsSync(opt)) fs.copyFileSync(opt, path.join(dir, 'options.txt'));
+      const cfg = path.join(baseDir, 'config');
+      if (fs.existsSync(cfg)) fs.cpSync(cfg, path.join(dir, 'config'), { recursive: true, force: false, errorOnExist: false });
+      fs.writeFileSync(marker, `Extra game folder for ${path.basename(baseDir)} - made by the Pink Pony launcher.\n`);
+    }
+    const sv = path.join(baseDir, 'servers.dat'), mine = path.join(dir, 'servers.dat');
+    if (fs.existsSync(sv) && mtime(sv) > mtime(mine)) fs.copyFileSync(sv, mine);
+  } catch (e) {
+    // It starts with defaults instead. Never a failed launch.
+    console.warn('extra game folder:', e?.message || e);
+  }
+}
 
 /*
  * ONE SERVER LIST FOR EVERY VERSION (1.2.8).
@@ -2574,7 +2615,7 @@ async function switchAndRelaunch(uuid, mcVersion) {
  * The older way (switch.json and a relaunch) still works for 2.49 clients.
  */
 let bridge = null;             // { server, port, key }
-let bridgeGameDir = null;
+const bridgeDirs = new Set();   // every running game's folder
 let addJob = { state: 'idle', name: '', error: '' };
 
 function bridgeFile(gameDir) { return path.join(accountsDir(gameDir), 'bridge.json'); }
@@ -2666,7 +2707,7 @@ async function handleBridge(req, res, key) {
     const now = readStore();
     now.active = fresh.uuid;
     writeStore(now);
-    if (bridgeGameDir) writeAccountsFile(bridgeGameDir);
+    for (const d of bridgeDirs) writeAccountsFile(d);
     if (win && !win.isDestroyed()) win.webContents.send('accounts-changed');
     addEvent('join', `Switched to ${fresh.name}`, 'in game, no restart');
     // An in-game switch never goes through launchGame, so link here too.
@@ -2682,7 +2723,7 @@ async function handleBridge(req, res, key) {
       addJob = { state: 'pending', name: '', error: '' };
       signIn({ keepActive: true }).then((acc) => {
         addJob = { state: 'done', name: acc.name, error: '' };
-        if (bridgeGameDir) writeAccountsFile(bridgeGameDir);
+        for (const d of bridgeDirs) writeAccountsFile(d);
         if (win && !win.isDestroyed()) win.webContents.send('accounts-changed');
       }).catch((e) => {
         const code = String(e?.message || e || '');
@@ -2706,6 +2747,17 @@ async function handleBridge(req, res, key) {
 
 ipcMain.handle('launch', async (_e, opts) => launchGame(opts));
 
+/* A launch that fails before the game starts gives its game slot back. */
+async function launchGame(opts) {
+  const held = { dir: null, started: false };
+  try {
+    return await launchOne(opts, held);
+  } catch (e) {
+    if (held.dir && !held.started) { games.delete(held.dir); refreshRunning(); }
+    throw e;
+  }
+}
+
 /* Remember when each profile was last played, for the Profiles page. */
 function markPlayed(id) {
   try {
@@ -2717,7 +2769,7 @@ function markPlayed(id) {
   } catch { /* a missing timestamp is not worth failing a launch over */ }
 }
 
-async function launchGame(opts) {
+async function launchOne(opts, held) {
   const settings = readSettings();
   const account = loadAccount();
 
@@ -2741,7 +2793,24 @@ async function launchGame(opts) {
   const root = settings.gameDir || defaultGameDir();
 
   // Downloads shared, everything the player owns kept per profile.
-  const gameDir = profileDir(settings, profile);
+  const baseDir = profileDir(settings, profile);
+  if (games.size && !settings.multiInstance) {
+    throw new Error('The game is already running. Turn on "More than one game at once" in Settings to start another.');
+  }
+  for (const g of games.values()) {
+    if (g.uuid === account.uuid) {
+      throw new Error(`${account.name} is already playing - pick a different account to start another game.`);
+    }
+  }
+  if (games.size >= MAX_GAMES) throw new Error(`That's ${MAX_GAMES} games already - close one first.`);
+  let gameDir = baseDir;
+  for (let n = 2; games.has(gameDir) && n <= MAX_GAMES + 1; n++) gameDir = `${baseDir}-${n}`;
+  const extra = gameDir !== baseDir;
+  if (extra) seedInstance(baseDir, gameDir);
+  // Taken now, not when java starts: two quick clicks must not get one folder.
+  games.set(gameDir, { uuid: account.uuid, name: account.name });
+  held.dir = gameDir;
+  refreshRunning();
   const modsDir = path.join(gameDir, 'mods');
   fs.mkdirSync(modsDir, { recursive: true });
 
@@ -2755,17 +2824,17 @@ async function launchGame(opts) {
   catch (e) { shaderNote = `Could not get shaders (${e?.message || e}) - playing without them.`; }
   if (shaderNote) addEvent('shaders', shaderNote, profile.name);
   const java = await ensureJava(root, mcVersion, settings.javaPath);
-  carryIfNew(settings, profile);
-  if (settings.cloudSync) {
+  if (!extra) carryIfNew(settings, profile);
+  if (settings.cloudSync && !extra) {
     say(64, 'Syncing your cloud saves…');
     // Never longer than this before the game starts; it finishes on its own.
     await Promise.race([cloudSync(gameDir, settings.code), new Promise((r) => setTimeout(r, 25000))]);
   }
-  const serversAt = serversIn(settings, profile);
+  const serversAt = extra ? 0 : serversIn(settings, profile);
   seedCode(gameDir, settings.code);
   takeSwitchRequest(gameDir);            // a leftover from a crash must not fire later
   writeAccountsFile(gameDir);
-  try { await startBridge(); writeBridgeFile(gameDir); bridgeGameDir = gameDir; }
+  try { await startBridge(); writeBridgeFile(gameDir); bridgeDirs.add(gameDir); }
   catch (e) { console.warn('bridge failed:', e?.message || e); }
 
   // Mojang's own JVM flags for this version (see mojangJvmArgs), and native
@@ -2805,11 +2874,12 @@ async function launchGame(opts) {
     say(97, 'Starting Minecraft…');
   });
   launcher.on('close', (code) => {
-    gameRunning = false;
-    serversOut(settings, profile, serversAt);
+    games.delete(gameDir);
+    refreshRunning();
+    if (!extra) serversOut(settings, profile, serversAt);
     // What changed in game goes up now (1.3.1). Not awaited: closing the game
     // must not wait on the network.
-    if (readSettings().cloudSync) cloudSync(gameDir, settings.code).catch(() => {});
+    if (readSettings().cloudSync && !extra) cloudSync(gameDir, settings.code).catch(() => {});
     // Written into the same log as the game's output, so a session that ends
     // without "Stopping!" says how it ended instead of just stopping.
     if (settings.keepLogs) {
@@ -2823,7 +2893,7 @@ async function launchGame(opts) {
     // chance a brand new install has to link this account.
     linkAccount(loadAccount()).catch(() => {});
     removeBridgeFile(gameDir);
-    if (bridgeGameDir === gameDir) bridgeGameDir = null;
+    bridgeDirs.delete(gameDir);
     // Asked to come back as somebody else? Do that before anything else - the
     // update, if one is waiting, installs when that game closes instead.
     const next = takeSwitchRequest(gameDir);
@@ -2836,8 +2906,9 @@ async function launchGame(opts) {
     }
     // An update that arrived mid-game installs now that the game is gone.
     // Otherwise ask again - the launcher is about to be looked at.
-    if (updateWaiting) installUpdate();
-    else checkForUpdate('game-closed');
+    // With more than one game open, only once the last one has closed.
+    if (updateWaiting && !gameRunning) installUpdate();
+    else if (!gameRunning) checkForUpdate('game-closed');
     const early = Date.now() - startedAt < 120000;
     say(100, code === 0 ? 'Closed'
       : shadersOn && early ? `Game ${describeExit(code)} while starting with shaders on - if it happens again, turn Shaders off on the Profiles page.`
@@ -2848,7 +2919,6 @@ async function launchGame(opts) {
   linkAccount(account).catch(() => {});
 
   const startedAt = Date.now();
-  gameRunning = true;
   let child;
   try {
     child = await launcher.launch({
@@ -2876,9 +2946,10 @@ async function launchGame(opts) {
         : settings.windowWidth ? ['--width', String(settings.windowWidth), '--height', String(settings.windowHeight)]
         : undefined
     });
-  } catch (e) { gameRunning = false; throw e; }
+  } catch (e) { games.delete(gameDir); refreshRunning(); throw e; }
   // No process means it never started, so there is nothing to wait to close.
-  if (!child) gameRunning = false;
+  if (!child) { games.delete(gameDir); refreshRunning(); }
+  else held.started = true;
 
   markPlayed(profile.id);
   addEvent('play', `Launched ${mcVersion}`,
