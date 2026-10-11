@@ -327,6 +327,8 @@ ipcMain.handle('mods-write', async (_e, enabled) => {
   const tmp = file + '.tmp';
   fs.writeFileSync(tmp, JSON.stringify(doc, null, 2));
   fs.renameSync(tmp, file);
+  const s = readSettings();
+  sharedToggles(s, activeProfile(s), enabled);
   return true;
 });
 
@@ -410,7 +412,9 @@ const DEFAULTS = {
   cloudSync: false,
   // More than one game at once (1.3.4): each extra game gets its own copy of
   // the profile folder, and every game must be a different account.
-  multiInstance: false
+  multiInstance: false,
+  // One set of Pink Pony settings for every version (1.3.9) - see sharedIn.
+  sharedSettings: true
 };
 
 /*
@@ -501,6 +505,7 @@ ipcMain.handle('settings-write', async (_e, patch) => {
   next.betaUpdates = !!next.betaUpdates;
   next.cloudSync = !!next.cloudSync;
   next.multiInstance = !!next.multiInstance;
+  next.sharedSettings = next.sharedSettings !== false;
   // A window size is both or neither, and inside what a screen can be. These
   // end up as --width/--height on the game's command line.
   const w = Math.round(Number(next.windowWidth) || 0), h = Math.round(Number(next.windowHeight) || 0);
@@ -1188,6 +1193,249 @@ function serversOut(settings, profile, before) {
   }
 }
 
+/*
+ * ONE SET OF PINK PONY SETTINGS FOR EVERY VERSION (1.3.9).
+ *
+ * Each version is its own game folder, so each had its own HUD layout,
+ * module settings, keybinds, macros and waypoints - change something on 26.3
+ * and 1.21.1 never heard of it. Now there is one shared copy in
+ * <Pink Pony folder>/shared/, the same idea as the shared server list:
+ *
+ *   before a game starts  the shared settings go into its folder
+ *   when it closes        whatever that game changed goes back out
+ *
+ * modules.json is MERGED, module by module, never copied whole. A client
+ * rewrites that file with only the modules and settings its own build has,
+ * so a whole-file copy through a version that lacks a module would wipe that
+ * module everywhere. Here a module - or one setting of it - that a version
+ * does not have simply stays in the shared copy untouched. And only what a
+ * game actually CHANGED goes back out, so two versions open at once cannot
+ * undo each other's changes to different modules.
+ *
+ * macros.json and waypoints.json are whole files, newer wins, like servers.dat.
+ *
+ * The first time a version joins, its own files are copied aside to
+ * <profile>/before-shared-<time>/ - nothing is ever just overwritten. The
+ * shared copy itself starts from the version played most recently.
+ *
+ * Fabric versions only: 1.8.9 keeps its own, simpler settings file for now.
+ * Off with Settings > "Same settings on every version".
+ */
+const SHARED_DIR = 'shared';
+const SHARED_MODULES = 'modules.json';
+const SHARED_WHOLE = ['macros.json', 'waypoints.json'];
+const SHARED_MARK = '.pinkpony-shared';
+const MODULE_STATE = ['enabled', 'favorite', 'x', 'y', 'key'];
+
+function sharedDir(settings) {
+  return path.join(settings.gameDir || defaultGameDir(), SHARED_DIR);
+}
+
+function sharesSettings(settings, profile) {
+  return settings.sharedSettings !== false && !!profile && !isForgeLine(String(profile.mc || ''));
+}
+
+function readJsonFile(file) {
+  try { return JSON.parse(fs.readFileSync(file, 'utf8')); } catch { return null; }
+}
+
+function writeJsonAtomic(file, doc) {
+  fs.mkdirSync(path.dirname(file), { recursive: true });
+  const tmp = file + '.tmp';
+  fs.writeFileSync(tmp, JSON.stringify(doc, null, 2));
+  fs.renameSync(tmp, file);
+}
+
+function moduleRows(doc) {
+  return doc && Array.isArray(doc.modules)
+    ? doc.modules.filter((m) => m && typeof m === 'object' && typeof m.id === 'string') : null;
+}
+
+/* `over`'s state on top of `base`: its toggles, place and key, and each of its settings. */
+function mergeModule(base, over) {
+  if (!base) return over;
+  const out = { ...base };
+  for (const k of MODULE_STATE) if (Object.prototype.hasOwnProperty.call(over, k)) out[k] = over[k];
+  out.settings = { ...(base.settings || {}), ...(over.settings || {}) };
+  return out;
+}
+
+/* Did the game change this module? Only what this build has is compared. */
+function sameModule(before, now) {
+  if (!before) return false;
+  for (const k of MODULE_STATE) {
+    if (JSON.stringify(before[k] ?? null) !== JSON.stringify(now[k] ?? null)) return false;
+  }
+  const a = before.settings || {}, b = now.settings || {};
+  for (const k of Object.keys(b)) {
+    if (JSON.stringify(a[k] ?? null) !== JSON.stringify(b[k])) return false;
+  }
+  return true;
+}
+
+/* `over`'s modules merged into `doc` (which may be null). */
+function mergeDoc(doc, over, onlyIds) {
+  const byId = new Map((moduleRows(doc) || []).map((m) => [m.id, m]));
+  for (const m of moduleRows(over) || []) {
+    if (onlyIds && !onlyIds.has(m.id)) continue;
+    byId.set(m.id, mergeModule(byId.get(m.id), m));
+  }
+  return { ...(doc || {}), format: doc?.format ?? over?.format ?? 1, modules: [...byId.values()] };
+}
+
+function sameTime(a, b) {
+  try { const t = new Date(mtime(b)); fs.utimesSync(a, t, t); } catch { /* only an optimisation */ }
+}
+
+/* The first time: the shared copy starts from the most recently played Fabric version. */
+function seedShared(settings) {
+  const sd = sharedDir(settings);
+  for (const name of [SHARED_MODULES, ...SHARED_WHOLE]) {
+    const dest = path.join(sd, name);
+    if (fs.existsSync(dest)) continue;
+    let best = '', bestAt = 0;
+    for (const p of settings.profiles) {
+      if (!sharesSettings(settings, p)) continue;
+      const f = path.join(profileDir(settings, p), CARRIED_DIR, name);
+      const t = mtime(f);
+      if (t > bestAt) { best = f; bestAt = t; }
+    }
+    if (best) {
+      fs.mkdirSync(sd, { recursive: true });
+      fs.copyFileSync(best, dest);
+      sameTime(dest, best);
+    }
+  }
+}
+
+/* Before a game starts. Returns what the game started with, for sharedOut. */
+function sharedIn(settings, profile) {
+  const snap = { on: false, modules: null, at: {} };
+  if (!sharesSettings(settings, profile)) return snap;
+  try {
+    const dir = profileDir(settings, profile);
+    const cfg = path.join(dir, CARRIED_DIR);
+    const sd = sharedDir(settings);
+    fs.mkdirSync(cfg, { recursive: true });
+    seedShared(settings);
+    const joining = !fs.existsSync(path.join(dir, SHARED_MARK));
+
+    if (joining) {
+      // Its own settings, copied aside before the shared ones go in.
+      const stamp = new Date().toISOString().replace(/[:T]/g, '-').slice(0, 19);
+      const aside = path.join(dir, `before-shared-${stamp}`, CARRIED_DIR);
+      for (const name of [SHARED_MODULES, ...SHARED_WHOLE]) {
+        const f = path.join(cfg, name), s = path.join(sd, name);
+        if (!fs.existsSync(f) || !fs.existsSync(s)) continue;
+        if (fs.readFileSync(f).equals(fs.readFileSync(s))) continue;
+        fs.mkdirSync(aside, { recursive: true });
+        fs.copyFileSync(f, path.join(aside, name));
+      }
+    }
+
+    const sharedF = path.join(sd, SHARED_MODULES), mineF = path.join(cfg, SHARED_MODULES);
+    let shared = readJsonFile(sharedF);
+    const mine = readJsonFile(mineF);
+    // Changed outside a game since the last time (the launcher's Mods page,
+    // a cloud download): that goes into the shared copy first.
+    if (!joining && moduleRows(mine) && moduleRows(shared) && mtime(mineF) > mtime(sharedF) + 1000) {
+      shared = mergeDoc(shared, mine);
+      writeJsonAtomic(sharedF, shared);
+    }
+    if (moduleRows(shared)) {
+      writeJsonAtomic(mineF, mergeDoc(mine, shared));
+      sameTime(mineF, sharedF);
+    }
+    snap.modules = readJsonFile(mineF);
+
+    for (const name of SHARED_WHOLE) {
+      const s = path.join(sd, name), m = path.join(cfg, name);
+      if (fs.existsSync(s) && (joining || mtime(s) > mtime(m))) {
+        fs.copyFileSync(s, m);
+        sameTime(m, s);
+      }
+      snap.at[name] = mtime(m);
+    }
+    if (joining) {
+      fs.writeFileSync(path.join(dir, SHARED_MARK), 'Uses the shared Pink Pony settings in ../../shared\n');
+      addEvent('profile', `${profile.name} now uses your shared settings`,
+               'Your HUD, mod settings, keybinds, macros and waypoints are the same on every version');
+    }
+    snap.on = true;
+  } catch (e) {
+    // The game starts with whatever this folder had. Never a failed launch.
+    console.warn('shared settings in:', e?.message || e);
+  }
+  return snap;
+}
+
+/* When the game closes: what it changed goes back into the shared copy. */
+function sharedOut(settings, profile, snap) {
+  if (!snap?.on) return;
+  try {
+    const cfg = path.join(profileDir(settings, profile), CARRIED_DIR);
+    const sd = sharedDir(settings);
+    const sharedF = path.join(sd, SHARED_MODULES);
+    const mine = readJsonFile(path.join(cfg, SHARED_MODULES));
+    if (moduleRows(mine)) {
+      const shared = readJsonFile(sharedF);
+      if (!moduleRows(shared) || !moduleRows(snap.modules)) {
+        writeJsonAtomic(sharedF, mergeDoc(shared, mine));
+      } else {
+        const before = new Map(moduleRows(snap.modules).map((m) => [m.id, m]));
+        const changed = new Set(moduleRows(mine).filter((m) => !sameModule(before.get(m.id), m)).map((m) => m.id));
+        if (changed.size) writeJsonAtomic(sharedF, mergeDoc(shared, mine, changed));
+      }
+    }
+    for (const name of SHARED_WHOLE) {
+      const m = path.join(cfg, name);
+      const t = mtime(m);
+      if (t && t !== snap.at[name]) {
+        fs.mkdirSync(sd, { recursive: true });
+        fs.copyFileSync(m, path.join(sd, name));
+      }
+    }
+  } catch (e) {
+    console.warn('shared settings out:', e?.message || e);
+  }
+}
+
+/* The Mods page changed some toggles: the shared copy hears about it too. */
+function sharedToggles(settings, profile, enabled) {
+  if (!sharesSettings(settings, profile)) return;
+  try {
+    const f = path.join(sharedDir(settings), SHARED_MODULES);
+    const doc = readJsonFile(f);
+    if (!moduleRows(doc)) return;
+    for (const m of doc.modules) {
+      if (m && Object.prototype.hasOwnProperty.call(enabled, m.id)) m.enabled = !!enabled[m.id];
+    }
+    writeJsonAtomic(f, doc);
+  } catch (e) {
+    console.warn('shared settings toggles:', e?.message || e);
+  }
+}
+
+/* "Copy settings from" is a deliberate choice: it becomes the shared copy. */
+function sharedFromCopy(settings, profile) {
+  if (!sharesSettings(settings, profile)) return;
+  try {
+    const cfg = path.join(profileDir(settings, profile), CARRIED_DIR);
+    const sd = sharedDir(settings);
+    const mine = readJsonFile(path.join(cfg, SHARED_MODULES));
+    if (moduleRows(mine)) {
+      const f = path.join(sd, SHARED_MODULES);
+      writeJsonAtomic(f, mergeDoc(readJsonFile(f), mine));
+    }
+    for (const name of SHARED_WHOLE) {
+      const m = path.join(cfg, name);
+      if (fs.existsSync(m)) { fs.mkdirSync(sd, { recursive: true }); fs.copyFileSync(m, path.join(sd, name)); }
+    }
+  } catch (e) {
+    console.warn('shared settings copy:', e?.message || e);
+  }
+}
+
 /* The Settings button: copy from `fromId` into the profile being played now. */
 ipcMain.handle('profile-copy', async (_e, fromId) => {
   if (gameRunning) {
@@ -1201,6 +1449,7 @@ ipcMain.handle('profile-copy', async (_e, fromId) => {
   if (from.id === to.id) throw new Error('That is the version you are on.');
   const files = carry(from, to, s);
   if (!files.length) throw new Error(`${from.name} has nothing to copy yet - play it once first.`);
+  sharedFromCopy(s, to);
   addEvent('profile', `Copied settings from ${from.name}`, `${files.length} files into ${to.name}`);
   return { count: files.length, skippedOptions: mcNewer(from.mc, to.mc) };
 });
@@ -2949,6 +3198,7 @@ async function launchOne(opts, held) {
     await Promise.race([cloudSync(gameDir, settings.code), new Promise((r) => setTimeout(r, 25000))]);
   }
   const serversAt = extra ? 0 : serversIn(settings, profile);
+  const sharedAt = extra ? null : sharedIn(settings, profile);
   seedCode(gameDir, settings.code);
   takeSwitchRequest(gameDir);            // a leftover from a crash must not fire later
   writeAccountsFile(gameDir);
@@ -2967,6 +3217,12 @@ async function launchOne(opts, held) {
     `-XX:ErrorFile=${path.join(crashDir, 'hs_err_pid%p.log')}`
   ];
   if (settings.keepLogs) {
+    // The log is appended to forever; a busy server's chat made one 100 MB.
+    // Past 20 MB it starts again, with the last one kept as launcher.old.log.
+    try {
+      const log = path.join(gameDir, 'launcher.log');
+      if (fs.statSync(log).size > 20 * 1024 * 1024) fs.renameSync(log, path.join(gameDir, 'launcher.old.log'));
+    } catch { /* no log yet */ }
     try {
       fs.appendFileSync(path.join(gameDir, 'launcher.log'),
         `[${new Date().toLocaleTimeString('en-GB', { hour12: false })}] [Pink Pony launcher]: launcher ${app.getVersion()}, Java ${java.major}, Mojang JVM flags: ${vanillaJvm.join(' ') || 'none'}\n`);
@@ -2995,6 +3251,7 @@ async function launchOne(opts, held) {
     games.delete(gameDir);
     refreshRunning();
     if (!extra) serversOut(settings, profile, serversAt);
+    if (!extra) sharedOut(settings, profile, sharedAt);
     // What changed in game goes up now (1.3.1). Not awaited: closing the game
     // must not wait on the network.
     if (readSettings().cloudSync && !extra) cloudSync(gameDir, settings.code).catch(() => {});

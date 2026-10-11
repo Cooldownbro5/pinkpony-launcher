@@ -1478,6 +1478,7 @@ function paintSettings() {
   swap($('closeOnLaunch'), settings.closeOnLaunch);
   swap($('reopenOnClose'), settings.reopenOnClose !== false);
   swap($('multiInstance'), !!settings.multiInstance);
+  swap($('sharedSettings'), settings.sharedSettings !== false);
   $('reopenRow')?.classList.toggle('muted', !settings.closeOnLaunch);
   swap($('keepLogs'), settings.keepLogs);
   paintBeta();
@@ -1666,6 +1667,9 @@ function wireSettings() {
     !settings.multiInstance ? 'Switch account, then press PLAY to start another game'
                             : 'One game at a time');
   $('keepLogs').onclick = () => save({ keepLogs: !settings.keepLogs });
+  $('sharedSettings').onclick = () => save({ sharedSettings: settings.sharedSettings === false },
+    settings.sharedSettings === false ? 'The same settings on every version, from the next launch'
+                                      : 'Each version keeps its own settings from now on');
   const runCloud = async () => {
     cloudState.busy = true; paintCloud();
     const sum = await window.pp.cloudSync().catch(() => null);
