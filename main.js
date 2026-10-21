@@ -2607,8 +2607,9 @@ async function ensureClient(modsDir, mcVersion, code, beta = false) {
       no_build: `There is no Pink Pony build for ${mcVersion} yet.`,
       file_missing: `The build for ${mcVersion} is missing from storage (${res?.file}).`,
       rate_limited: 'Too many tries - wait a minute.',
-      premium_only: 'The client needs Premium while it is in beta - $5.99 a month. Open a ticket in the Discord to get it.',
-      plus_only: 'The client needs Premium while it is in beta - $5.99 a month. Open a ticket in the Discord to get it.'
+      // Only while the build function's FREE_RELEASE switch is off.
+      premium_only: 'Pink Pony needs Premium right now - $5.99 a month. Open a ticket in the Discord to get it.',
+      plus_only: 'Pink Pony needs Premium right now - $5.99 a month. Open a ticket in the Discord to get it.'
     }[res?.reason] || 'Could not get the client build.');
   }
 
