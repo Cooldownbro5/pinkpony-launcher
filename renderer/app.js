@@ -1171,7 +1171,7 @@ async function loadTiles(name) {
  */
 async function loadFeatured() {
   const rows = await rest('/rest/v1/cosmetic_catalog'
-    + '?select=label,value,kind,price&listed=eq.true&kind=neq.tag&order=sort.asc&limit=1');
+    + '?select=label,value,kind,price,available_until&listed=eq.true&kind=neq.tag&order=sort.asc&limit=1');
   const f = rows[0];
   const nameEl = document.querySelector('.featname');
   const subEl = document.querySelector('.featsub');
@@ -1204,8 +1204,9 @@ async function loadFeatured() {
     fa.style.backgroundImage = `url('${art(f.value)}')`;
   }
   if (nameEl) nameEl.textContent = f.label || pretty(f.value);
+  const left = limitedLeft(f.available_until);
   if (subEl) subEl.textContent =
-    (f.price ? f.price + ' · ' : '') + String(f.kind || '').toUpperCase();
+    (f.price ? f.price + ' · ' : '') + String(f.kind || '').toUpperCase() + (left ? ' · LIMITED, ' + left : '');
 }
 
 /* ---------------- friends ---------------- */
@@ -1954,7 +1955,7 @@ async function refreshCosmetics() {
   if (!name || document.hidden) return;
   const who = encodeURIComponent(String(name).toLowerCase());
   const [cat, grants, worn] = await Promise.all([
-    restStrict('/rest/v1/cosmetic_catalog?select=id,kind,value,label,price,premium_only,color&listed=eq.true&order=sort.asc'),
+    restStrict('/rest/v1/cosmetic_catalog?select=id,kind,value,label,price,premium_only,color,available_until&listed=eq.true&order=sort.asc'),
     restStrict(`/rest/v1/cosmetic_grants?select=kind,value,color&player=eq.${who}`),
     restStrict(`/rest/v1/cosmetics?select=tag,tag_color,hat,cape&player=eq.${who}`)
   ]);
@@ -1981,7 +1982,7 @@ document.addEventListener('visibilitychange', () => { if (!document.hidden) refr
 
 async function loadCosmetics(name) {
   CATALOG = await rest('/rest/v1/cosmetic_catalog'
-    + '?select=id,kind,value,label,price,premium_only,color'
+    + '?select=id,kind,value,label,price,premium_only,color,available_until'
     + '&listed=eq.true&order=sort.asc');
 
   OWNED = [];
@@ -2041,6 +2042,7 @@ function cosList() {
       price: c.price || '',
       premium: !!c.premium_only,
       colour: c.color ?? 6,
+      until: c.available_until || '',
       owned: false
     });
   });
@@ -2055,6 +2057,22 @@ function cosList() {
 }
 
 const KIND_LABEL = { cape: 'CAPES', tag: 'TAGS', headband: 'HEADBANDS', hat: 'HATS' };
+
+/* LIMITED-TIME COSMETICS (1.3.12). A catalogue item with available_until is
+   only in the shop until then - a Supabase job takes it out of the shop when
+   it ends, and everyone who got it keeps it. Here it just says how long is
+   left: "3 DAYS LEFT", "LAST DAY", "5 HOURS LEFT". '' when it is not limited. */
+function limitedLeft(until) {
+  const t = Date.parse(until || '');
+  if (!Number.isFinite(t)) return '';
+  const ms = t - Date.now();
+  if (ms <= 0) return '';
+  const h = ms / 3600000;
+  if (h < 1) return 'ENDS SOON';
+  if (h < 24) return `${Math.ceil(h)} HOUR${Math.ceil(h) === 1 ? '' : 'S'} LEFT`;
+  const d = Math.ceil(h / 24);
+  return d === 1 ? 'LAST DAY' : `${d} DAYS LEFT`;
+}
 
 function drawCosCats() {
   const box = $('cosCats');
@@ -2158,8 +2176,10 @@ function cosCard(c) {
     ? `<div class="c2art capeart"><i data-cape style="background-image:url('${cosArt(c.value)}');${CAPE_UV}"></i></div>`
     : `<div class="c2art" style="background-image:url('${cosArt(c.value)}')"></div>`;
 
+  const left = !c.owned ? limitedLeft(c.until) : '';
   const badge = worn ? '<span class="c2badge on">WEARING</span>'
               : !c.owned && c.premium ? '<span class="c2badge prem">PREMIUM</span>'
+              : left ? `<span class="c2badge ltd">LIMITED · ${esc(left)}</span>`
               : '';
   const sub = c.owned ? (KIND_LABEL[c.kind] || c.kind || '').replace(/S$/, '')
             : (c.price ? c.price : c.premium ? 'Premium' : 'Not for sale');
