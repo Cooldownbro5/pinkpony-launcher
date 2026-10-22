@@ -25,8 +25,12 @@ document.querySelectorAll('[data-win]').forEach((b) => {
 
 const DISCORD = 'https://discord.gg/pinkp0ny';   // a zero, not an o
 const PATCH_NOTES = 'https://pinkponyclient.com/patchnotes.html';
+const YOUTUBE = 'https://www.youtube.com/@PinkponyClient';   // the site's link too
 document.querySelectorAll('[data-discord]').forEach((a) => {
   a.onclick = (e) => { e.preventDefault(); window.pp?.open?.(DISCORD); };
+});
+document.querySelectorAll('[data-youtube]').forEach((a) => {
+  a.onclick = (e) => { e.preventDefault(); window.pp?.open?.(YOUTUBE); };
 });
 
 /* The header icons and the hero's cog did nothing at all. Every one of them
@@ -2856,11 +2860,11 @@ function wireStrays() {
   if (patch) patch.onclick = () => window.pp?.open?.(
     PATCH_NOTES + (updateInfo.latest ? '#v' + updateInfo.latest : ''));
 
-  // X, YouTube and TikTok have no accounts yet. Rather than leave three links
-  // that do nothing, they are removed - they can come back the day there is
-  // something behind them.
+  // X and TikTok have no accounts yet. Rather than leave links that do
+  // nothing, they are removed - they can come back the day there is something
+  // behind them. YouTube has a channel now (1.3.15), so it stays.
   document.querySelectorAll('.socials a').forEach((a) => {
-    if (a.hasAttribute('data-discord')) return;
+    if (a.hasAttribute('data-discord') || a.hasAttribute('data-youtube')) return;
     a.remove();
   });
 }

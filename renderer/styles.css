@@ -97,7 +97,7 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:1.7;
   box-shadow:0 8px 20px color-mix(in srgb,var(--pink) 23.9%,transparent)}
 .up:hover{filter:brightness(1.07)}
 
-.socials{display:flex;justify-content:space-between;padding:16px 8px 4px}
+.socials{display:flex;gap:16px;padding:16px 8px 4px}
 .socials a{color:var(--dim)}
 .socials a:hover{color:var(--pink)}
 .sidever{margin:0;text-align:center;font-family:var(--m);font-size:10.5px;color:#463F52}
