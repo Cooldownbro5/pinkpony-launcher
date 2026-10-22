@@ -1756,7 +1756,11 @@ ipcMain.handle('friends', async (_e, action, target) => {
         action: String(action || 'list'),
         code,
         player: acc.name,
-        target: target ? String(target) : undefined
+        target: target ? String(target) : undefined,
+        // The once-a-minute list is also how friends see you "In the
+        // launcher" (friends function v12). Only list: everything else is
+        // something you did, not you being here.
+        from: String(action || 'list') === 'list' ? 'launcher' : undefined
       })
     }).then((r) => r.json());
   } catch {

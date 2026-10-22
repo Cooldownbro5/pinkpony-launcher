@@ -440,8 +440,19 @@
   </main>
 
   <aside class="rightcol">
-    <div class="rhead"><h2>FRIENDS <em id="friendCount"></em></h2>
-      <button class="ghost tiny" id="friendsRefresh">Refresh</button></div>
+    <div class="rhead fhead"><h2>FRIENDS <em id="friendCount"></em></h2>
+      <span class="fbtns">
+        <!-- What your friends see (1.3.14), like Steam's Online / Invisible. -->
+        <button class="ghost tiny fstat" id="friendStatus" title="What your friends see"
+                aria-haspopup="true" aria-expanded="false"><i class="sdot"></i><span id="friendStatusText">Online</span></button>
+        <button class="ghost tiny" id="friendsRefresh">Refresh</button>
+      </span>
+      <div class="fmenu" id="friendStatusMenu" role="menu" hidden>
+        <button role="menuitemradio" data-mode="online"><i class="sdot"></i><b>Online</b><small>Friends see where you are and can join you.</small></button>
+        <button role="menuitemradio" data-mode="hide_server"><i class="sdot half"></i><b>Hide my server</b><small>Friends see you're on, but not which server.</small></button>
+        <button role="menuitemradio" data-mode="invisible"><i class="sdot off"></i><b>Invisible</b><small>You look offline to everyone.</small></button>
+      </div>
+    </div>
 
     <div class="friends" id="friends"></div>
 

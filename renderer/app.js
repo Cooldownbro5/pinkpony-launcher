@@ -1349,6 +1349,7 @@ async function loadFriends() {
   }
 
   friendsState = res;
+  paintStatus(res.privacy);
   const online = res.friends.filter((f) => f.online).length;
   if (res.friends.length) $('friendCount').textContent = online + ' ONLINE';
 
@@ -1378,6 +1379,56 @@ async function loadFriends() {
   drawNotifications();
 }
 
+/* WHAT YOUR FRIENDS SEE (1.3.14) - Steam's Online / Invisible, plus a middle
+   one. Kept on the licence by the friends function, so it is the same in the
+   game, on every PC and on every account linked to the code:
+     online       where you are, with a JOIN button for them
+     hide_server  that you're on, never which server or world
+     invisible    offline to everyone
+   It only changes what FRIENDS see. */
+const STATUS_TEXT = { online: 'Online', hide_server: 'Server hidden', invisible: 'Invisible' };
+let myStatus = 'online';
+function paintStatus(mode) {
+  if (!STATUS_TEXT[mode]) mode = 'online';
+  myStatus = mode;
+  const t = $('friendStatusText'), dot = document.querySelector('#friendStatus .sdot');
+  if (t) t.textContent = STATUS_TEXT[mode];
+  if (dot) dot.className = 'sdot' + (mode === 'hide_server' ? ' half' : mode === 'invisible' ? ' off' : '');
+  document.querySelectorAll('#friendStatusMenu button').forEach((b) => {
+    b.classList.toggle('on', b.dataset.mode === mode);
+    b.setAttribute('aria-checked', String(b.dataset.mode === mode));
+  });
+}
+function wireStatus() {
+  const btn = $('friendStatus'), menu = $('friendStatusMenu');
+  if (!btn || !menu) return;
+  const close = () => { menu.hidden = true; btn.setAttribute('aria-expanded', 'false'); };
+  btn.onclick = (e) => {
+    e.stopPropagation();
+    menu.hidden = !menu.hidden;
+    btn.setAttribute('aria-expanded', String(!menu.hidden));
+  };
+  document.addEventListener('click', (e) => { if (!menu.contains(e.target)) close(); });
+  document.addEventListener('keydown', (e) => { if (e.key === 'Escape') close(); });
+  menu.querySelectorAll('button').forEach((b) => {
+    b.onclick = async () => {
+      close();
+      const mode = b.dataset.mode, was = myStatus;
+      if (mode === was) return;
+      paintStatus(mode);                       // show it now, undo if it fails
+      const res = await window.pp?.friends?.('privacy', mode).catch(() => null);
+      if (!res?.ok) {
+        paintStatus(was);
+        fnote("Couldn't change that right now - try again in a minute.", false);
+        return;
+      }
+      fnote({ online: 'Friends can see where you are again.',
+              hide_server: "Friends will see you're on, but not which server.",
+              invisible: 'You now look offline to your friends.' }[mode], true);
+    };
+  });
+}
+
 function fsection(label) {
   const p = document.createElement('p');
   p.className = 'fsection';
@@ -1394,7 +1445,9 @@ function friendRow(f) {
   const row = document.createElement('div');
   row.className = 'frow';
   const where = f.online ? (f.status || 'Online') : 'Offline';
-  row.innerHTML = head(f.name, !f.online)
+  // On but not in a game (the launcher, the menus) gets a blue dot.
+  const idle = f.online && /^In (the launcher|menus)$/.test(f.status || '');
+  row.innerHTML = head(f.name, !f.online).replace('class="fface', idle ? 'class="fface idle' : 'class="fface')
     + `<span class="fmeta"><b>${esc(f.name)}</b><i>${esc(where)}</i></span>`;
 
   const act = document.createElement('span');
@@ -1502,6 +1555,7 @@ function wireFriends() {
   add.onclick = send;
   $('friendName').onkeydown = (e) => { if (e.key === 'Enter') send(); };
   $('friendsRefresh').onclick = () => loadFriends();
+  wireStatus();
 
   // Presence goes stale after ninety seconds, so a minute keeps the dots
   // honest without hammering the function.
