@@ -1301,7 +1301,7 @@ async function loadFeatured() {
   if (nameEl) nameEl.textContent = f.label || pretty(f.value);
   const left = limitedLeft(f.available_until);
   if (subEl) subEl.textContent =
-    (f.price ? f.price + ' · ' : '') + String(f.kind || '').toUpperCase() + (left ? ' · LIMITED, ' + left : '');
+    (f.price ? f.price + ' · ' : '') + kindWord(f.kind) + (left ? ' · LIMITED, ' + left : '');
 }
 
 /* ---------------- friends ---------------- */
@@ -2151,7 +2151,15 @@ function cosList() {
     String(a.label).localeCompare(String(b.label)));
 }
 
-const KIND_LABEL = { cape: 'CAPES', tag: 'TAGS', headband: 'HEADBANDS', hat: 'HATS' };
+const KIND_LABEL = { cape: 'CLOAKS', tag: 'TAGS', headband: 'HEADBANDS', hat: 'HATS' };
+
+/* Players see "cloak" (1.3.14), like every other client. The data still says
+   kind 'cape' - that is the database, the game and every file name, and it
+   never shows. A function, not a const, so the home page can use it before
+   this line has run. */
+function kindWord(kind) {
+  return kind === 'cape' ? 'CLOAK' : String(kind || '').toUpperCase();
+}
 
 /* LIMITED-TIME COSMETICS (1.3.12). A catalogue item with available_until is
    only in the shop until then - a Supabase job takes it out of the shop when
@@ -2636,7 +2644,7 @@ function paintHomeCosmetic() {
   }
 
   if (nameEl) nameEl.textContent = on.label;
-  if (subEl) subEl.textContent = String(on.kind || '').toUpperCase();
+  if (subEl) subEl.textContent = kindWord(on.kind);
   setArt(on);
 
   if (equipBtn) {
