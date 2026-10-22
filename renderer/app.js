@@ -769,53 +769,97 @@ const CapeAnim = (() => {
     return { k, k2: (k + 1) % a.n, f: (now % a.ms) / a.ms };
   };
   const urlOf = (el) => { const m = /url\(["']?(.*?)["']?\)/.exec(el.style.backgroundImage || ""); return m ? m[1] : null; };
-  /* background-position % is a share of the LEFTOVER space: frame k's outside panel. */
-  const posY = (k, n) => ((2 * k + 1 / 16) / (2 * n - 1) * 100) + "%";
+  /* SWATCHES ARE DRAWN ON A CANVAS (launcher 1.3.14). They used to be the
+     cape file as a CSS background, scaled with background-size and moved
+     frame to frame with background-position. For an HD sheet that is the
+     wrong tool: Galaxy is 1024 x 8192, and Chromium shrinks a picture that
+     size for the screen in a hurry - grey streaks through the middle and
+     glitter on every frame, which is what "it looks really buggy" was. Now
+     each frame's back panel is cut out ONCE, shrunk properly (halving steps,
+     high-quality smoothing) to exactly the swatch's size in device pixels,
+     and kept; playing it is just drawing two small pictures, the next one
+     faded over this one. 64-wide pixel capes are left as they always were -
+     crisp CSS backgrounds - because nearest-neighbour is right for those. */
   const live = new Set();
+  const frameCache = new Map();          // url|w|h -> [canvas per frame]
+  function shrink(src, sx, sy, sw, sh, w, h) {
+    let cur = src, cx = sx, cy = sy, cw = sw, ch = sh;
+    while (cw / 2 >= w && ch / 2 >= h) {          // halve until close, then one last step
+      const c = document.createElement("canvas");
+      c.width = Math.round(cw / 2); c.height = Math.round(ch / 2);
+      const g = c.getContext("2d"); g.imageSmoothingEnabled = true; g.imageSmoothingQuality = "high";
+      g.drawImage(cur, cx, cy, cw, ch, 0, 0, c.width, c.height);
+      cur = c; cx = 0; cy = 0; cw = c.width; ch = c.height;
+    }
+    const out = document.createElement("canvas"); out.width = w; out.height = h;
+    const g = out.getContext("2d"); g.imageSmoothingEnabled = true; g.imageSmoothingQuality = "high";
+    g.drawImage(cur, cx, cy, cw, ch, 0, 0, w, h);
+    return out;
+  }
+  function framesFor(a, url, w, h) {
+    const key = url + "|" + w + "|" + h;
+    if (!frameCache.has(key)) {
+      const fw = a.w * 10 / 64, fhp = a.fh / 2, x0 = a.w / 64, y0 = a.fh / 32;
+      const list = [];
+      for (let k = 0; k < a.n; k++) list.push(shrink(a.img, x0, k * a.fh + y0, fw, fhp, w, h));
+      frameCache.set(key, list);
+      if (frameCache.size > 40) frameCache.delete(frameCache.keys().next().value);
+    }
+    return frameCache.get(key);
+  }
+  function unhook(el) {
+    if (el._cv) { el._cv.remove(); el._cv = null; }
+    if (el._cape) { el.style.backgroundSize = el._capeSize; el._cape = null; }
+  }
   function scan() {
     document.querySelectorAll(SEL).forEach((el) => {
-      if (el.classList.contains("cape-next")) return;
       const u = urlOf(el);
       if (!u || el._capeUrl === u) return;
-      if (el._cape) {
-        el.style.backgroundSize = el._capeSize; el.style.backgroundPositionY = el._capeY;
-        if (el._capeNext) { el._capeNext.remove(); el._capeNext = null; }
-        el._cape = null;
-      }
+      unhook(el);
       el._capeUrl = u;
       info(u).then((a) => {
-        if (!a || a.n < 2 || el._capeUrl !== u) return;
-        el._capeSize = el.style.backgroundSize; el._capeY = el.style.backgroundPositionY;
+        if (!a || el._capeUrl !== u) return;
+        if (a.w <= 64 && a.n < 2) return;          // pixel cape: CSS does it right
         el._cape = a;
-        el.style.backgroundSize = `640% ${200 * a.n}%`;
-        if (!still) {
-          // The next frame, laid over this one and faded in.
-          if (getComputedStyle(el).position === "static") el.style.position = "relative";
-          const nx = document.createElement("i");
-          nx.className = "cape-next";
-          nx.style.cssText = "position:absolute;inset:0;pointer-events:none;border-radius:inherit;opacity:0;"
-            + `background-image:url("${u}");background-size:640% ${200 * a.n}%;`
-            + `background-position-x:${getComputedStyle(el).backgroundPositionX};image-rendering:inherit`;
-          el.appendChild(nx);
-          el._capeNext = nx;
-        }
+        el._capeSize = el.style.backgroundSize;
+        if (getComputedStyle(el).position === "static") el.style.position = "relative";
+        const cv = document.createElement("canvas");
+        cv.className = "cape-cv";
+        cv.style.cssText = "position:absolute;inset:0;width:100%;height:100%;border-radius:inherit;pointer-events:none";
+        el.appendChild(cv);
+        el._cv = cv;
+        el.style.backgroundSize = "0 0";              // the url stays, so scan() still sees changes
         live.add(el);
-        paint(el);
+        paint(el, true);
       });
     });
   }
-  function paint(el) {
+  function paint(el, force) {
     if (!el.isConnected || !el._cape) { live.delete(el); return; }
-    const a = el._cape, t = at(a);
-    el.style.backgroundPositionY = posY(t.k, a.n);
-    if (el._capeNext) {
-      el._capeNext.style.backgroundPositionY = posY(t.k2, a.n);
-      el._capeNext.style.opacity = t.f.toFixed(3);
-    }
+    const a = el._cape, cv = el._cv;
+    const dpr = window.devicePixelRatio || 1;
+    const w = Math.round(el.clientWidth * dpr), h = Math.round(el.clientHeight * dpr);
+    if (!w || !h) return;                            // hidden page - try again next frame
+    if (cv.width !== w || cv.height !== h) { cv.width = w; cv.height = h; force = true; }
+    const t = at(a);
+    const f = Math.round(t.f * 24) / 24;             // 24 fade steps is plenty, and skips redraws
+    const sig = t.k + ":" + f;
+    if (!force && cv._sig === sig) return;
+    cv._sig = sig;
+    const frames = framesFor(a, el._capeUrl, w, h);
+    const g = cv.getContext("2d");
+    g.globalAlpha = 1;
+    g.clearRect(0, 0, w, h);
+    g.drawImage(frames[t.k], 0, 0);
+    if (a.n > 1 && f > 0) { g.globalAlpha = f; g.drawImage(frames[t.k2], 0, 0); g.globalAlpha = 1; }
   }
   setInterval(scan, 200);
   scan();
-  const loop = () => { live.forEach(paint); requestAnimationFrame(loop); };
+  let lastPaint = 0;
+  const loop = (now) => {
+    if (now - lastPaint >= 33) { lastPaint = now; live.forEach((el) => paint(el)); }
+    requestAnimationFrame(loop);
+  };
   requestAnimationFrame(loop);
 
   let tok = 0;
@@ -1021,9 +1065,18 @@ async function loadTier() {
   if (onBeta() !== wasBeta) { loadUpdate(); drawVersions(); }
 
   head.textContent = 'PREMIUM';
+  /* Somebody who already has Premium doesn't need the advert (1.3.14): the
+     card goes, and "PREMIUM member" under their name says they have it. It
+     only comes back in the last week of a monthly Premium, as a reminder with
+     ADD A MONTH on it - the same week the bell starts saying so. */
+  const daysLeft = ends ? Math.ceil((Date.parse(ends) - Date.now()) / 86400000) : Infinity;
+  card.hidden = premium && !(daysLeft <= 7);
+  const perks = card.querySelector('.perks');
+  if (perks) perks.hidden = premium;
   if (premium) {
-    body.textContent = ends ? 'Active until ' + until(ends) + '.' : 'Active - no end date.';
-    button.textContent = ends ? 'ADD A MONTH' : 'MANAGE';
+    body.textContent = daysLeft <= 0 ? 'Your Premium has ended.'
+                     : 'Ends ' + until(ends) + ' - ' + daysLeft + ' day' + (daysLeft === 1 ? '' : 's') + ' left.';
+    button.textContent = 'ADD A MONTH';
   } else {
     body.textContent = '$5.99 a month, never auto-charged.';
     button.textContent = 'GET PREMIUM';
