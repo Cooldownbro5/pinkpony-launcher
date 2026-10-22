@@ -1,0 +1,47 @@
+/* ============================================================
+   SEASON: HALLOWEEN (launcher 1.3.10)
+
+   Loaded after styles.css, and the only file that knows what season it is.
+   styles.css draws every pink from --pink / --pinkhi / --deep (1.3.10 turned
+   its fifty-odd pink literals into those), so a season is: new values for the
+   colours here, a picture in img/season-bg.jpg and the art in img/season-mark.png.
+
+   TO CHANGE SEASON (Thanksgiving next): replace this file and the two
+   pictures. TO GO BACK TO PLAIN PINK: make this file empty - styles.css on its
+   own is the normal look.
+
+   The violet matches the client's Season.java (pink turned -30 degrees), so
+   the launcher and the game look like one thing.
+   ============================================================ */
+:root{
+  --pink:#F63FFF; --pinkhi:#F47BFF; --deep:#B419C4;
+  --void:#07041A;
+  /* A little see-through, so the night shows behind the panels. */
+  --panel:#0C0926E8; --panel2:#130E30EE; --raise:#18123A;
+  --line:#231C4C; --line2:#352B6E;
+}
+
+body{
+  background:
+    linear-gradient(180deg,#07041AB3,#07041AE6 55%,#07041AF5),
+    url('img/season-bg.jpg') center/cover no-repeat fixed,
+    var(--void);
+}
+
+/* The hero: the Halloween scene, with the violet mark where the pony was. The
+   fade under the text (.heroart::after in styles.css) still applies. */
+.heroart{
+  background:
+    url('img/season-mark.png') right 7% center/auto 64% no-repeat,
+    radial-gradient(46% 100% at 72% 45%, color-mix(in srgb,var(--pink) 20%,transparent), transparent 64%),
+    url('img/season-bg.jpg') right 30%/cover no-repeat,
+    #0B0820;
+}
+.heroart::after{
+  background:linear-gradient(90deg,#08051CF2 2%,#08051CB8 32%,#08051C33 62%,transparent 80%);
+}
+
+/* The pink art files, turned to match without needing new copies. */
+.wordmark{filter:hue-rotate(-30deg) drop-shadow(0 6px 26px color-mix(in srgb,var(--pink) 30%,transparent))}
+.mark{filter:hue-rotate(-30deg) drop-shadow(0 4px 14px color-mix(in srgb,var(--pink) 36%,transparent))}
+.ppmark{filter:hue-rotate(-30deg)}
