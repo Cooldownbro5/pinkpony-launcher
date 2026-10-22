@@ -1604,11 +1604,27 @@ function describeJar(file, full) {
  * put it, and turning it back on is the same rename backwards - which matters
  * for a mod somebody downloaded once and cannot find again.
  */
+/* PINK PONY AND FABRIC API ARE ALWAYS ON (1.3.12). They used to have a switch
+   and a bin like any other mod, with a warning; now they have neither. The
+   client will not load without Fabric API, and turning Pink Pony off made a
+   "Pink Pony" launcher start a plain game. A core jar found switched off (from
+   an older launcher) is switched back on when the list is read, and the
+   'mods-file' handler refuses to touch either one, whatever the page asks. */
+const isCoreJar = (f) => /^(pinkpony|fabric-api)/i.test(String(f || ''));
+
 ipcMain.handle('mods-scan', async () => {
   const dir = path.join(profileDir(), 'mods');
   try { fs.mkdirSync(dir, { recursive: true }); } catch { /* it may already exist */ }
 
   let files = [];
+  try { files = fs.readdirSync(dir); } catch { return []; }
+
+  // Back on, if an older launcher let somebody switch one off.
+  for (const f of files.filter((x) => isCoreJar(x) && /\.jar\.disabled$/i.test(x))) {
+    const on = f.replace(/\.disabled$/i, '');
+    try { if (!fs.existsSync(path.join(dir, on))) fs.renameSync(path.join(dir, f), path.join(dir, on)); }
+    catch { /* in use - the next launch puts a fresh one in anyway */ }
+  }
   try { files = fs.readdirSync(dir); } catch { return []; }
 
   const shaderJars = new Set(Object.values(readShaderManifest(dir).files));
@@ -1625,7 +1641,8 @@ ipcMain.handle('mods-scan', async () => {
         // Ours and its dependency are marked so the UI can say why removing
         // them is a bad idea, rather than letting somebody delete the client
         // and wonder where it went.
-        managed: lower.startsWith('pinkpony') || lower.startsWith('fabric-api') || shader
+        managed: lower.startsWith('pinkpony') || lower.startsWith('fabric-api') || shader,
+        core: isCoreJar(f)                 // always on: no switch, no bin
       };
     })
     .sort((a, b) => Number(b.managed) - Number(a.managed) || a.name.localeCompare(b.name));
@@ -1635,6 +1652,7 @@ ipcMain.handle('mods-file', async (_e, action, file) => {
   if (typeof file !== 'string' || !/^[^\\/:*?"<>|]+\.jar(\.disabled)?$/i.test(file)) {
     throw new Error('bad file');       // no paths, no traversal
   }
+  if (isCoreJar(file)) throw new Error('Pink Pony and Fabric API are always on.');
   const dir = path.join(profileDir(), 'mods');
   const full = path.join(dir, file);
   if (!fs.existsSync(full)) throw new Error('not there any more');

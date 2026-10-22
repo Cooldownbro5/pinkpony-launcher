@@ -370,6 +370,16 @@ function jarRow(j) {
        <i>${esc(j.description || j.file)}</i>
      </span>`;
 
+  // Pink Pony and Fabric API: always on - no switch and no bin (1.3.12).
+  if (j.core) {
+    const lock = document.createElement('span');
+    lock.className = 'jarlock';
+    lock.title = 'Pink Pony needs this - it is always on';
+    lock.innerHTML = '<svg viewBox="0 0 24 24"><rect x="5" y="11" width="14" height="9" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/></svg>ALWAYS ON';
+    row.appendChild(lock);
+    return row;
+  }
+
   const toggle = document.createElement('button');
   toggle.className = 'sw2';
   toggle.setAttribute('aria-pressed', String(j.enabled));
