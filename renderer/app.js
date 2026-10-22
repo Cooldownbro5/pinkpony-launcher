@@ -573,7 +573,7 @@ window.pp?.onProgress(({ percent, text, done, failed }) => {
   // until the launcher was restarted.
   if (done || failed || text === 'Launched') loadJars();
   // More than one game at once: PLAY is free again as soon as this one is up.
-  if (text === 'Launched' && settings?.multiInstance) {
+  if (text === 'Launched' && settings?.multiGames !== false) {
     play.disabled = false;
     setTimeout(() => { progress.hidden = true; }, 1400);
   }
@@ -1477,7 +1477,7 @@ function paintSettings() {
   swap($('fullscreen'), settings.fullscreen);
   swap($('closeOnLaunch'), settings.closeOnLaunch);
   swap($('reopenOnClose'), settings.reopenOnClose !== false);
-  swap($('multiInstance'), !!settings.multiInstance);
+  swap($('multiInstance'), settings.multiGames !== false);
   swap($('sharedSettings'), settings.sharedSettings !== false);
   $('reopenRow')?.classList.toggle('muted', !settings.closeOnLaunch);
   swap($('keepLogs'), settings.keepLogs);
@@ -1663,9 +1663,9 @@ function wireSettings() {
     !settings.fullscreen ? 'Starts in fullscreen' : 'Starts in a window');
   $('closeOnLaunch').onclick = () => save({ closeOnLaunch: !settings.closeOnLaunch });
   $('reopenOnClose').onclick = () => save({ reopenOnClose: settings.reopenOnClose === false });
-  $('multiInstance').onclick = () => save({ multiInstance: !settings.multiInstance },
-    !settings.multiInstance ? 'Switch account, then press PLAY to start another game'
-                            : 'One game at a time');
+  $('multiInstance').onclick = () => save({ multiGames: settings.multiGames === false },
+    settings.multiGames === false ? 'Press PLAY again to start another game - any account'
+                                  : 'One game at a time');
   $('keepLogs').onclick = () => save({ keepLogs: !settings.keepLogs });
   $('sharedSettings').onclick = () => save({ sharedSettings: settings.sharedSettings === false },
     settings.sharedSettings === false ? 'The same settings on every version, from the next launch'
@@ -1901,6 +1901,74 @@ function cosNote(text, good = false) {
   }, 4000);
 }
 
+/* HD CAPES DRAWN SMOOTHLY (1.3.12). skinview3d samples every cape with
+   NEAREST - right for a 64x32 pixel cape, wrong for a 2048x1024 painting:
+   shrunk onto the model, nearest keeps one texel in dozens and the picture
+   turns to glitter. The game draws capes wider than 64 with linear filtering
+   and mipmaps, so the preview now does the same. The skin is never touched.
+   Wraps loadCape, so the animated capes (which reuse one texture) get it too. */
+function smoothCapes(viewer) {
+  const LINEAR = 1006, LINEAR_MIPMAP_LINEAR = 1008;   // three.js constants
+  const fix = () => {
+    const t = viewer.capeTexture, c = viewer.capeCanvas;
+    if (!t || !c || c.width <= 64) return;
+    t.magFilter = LINEAR; t.minFilter = LINEAR_MIPMAP_LINEAR; t.generateMipmaps = true;
+    try { t.anisotropy = viewer.renderer.capabilities.getMaxAnisotropy(); } catch { /* fine without */ }
+    t.needsUpdate = true;
+  };
+  const load = viewer.loadCape.bind(viewer);
+  viewer.loadCape = (...a) => {
+    const r = load(...a);
+    if (r && typeof r.then === 'function') return r.then((v) => { fix(); return v; });
+    fix(); return r;
+  };
+}
+
+/* COSMETICS UPDATE BY THEMSELVES (1.3.12). They were read once - at start and
+   on an account switch - so something granted in Discord, bought, or put on
+   in game did not show until the launcher was restarted. Now they are asked
+   for again every 45 seconds while the window is showing, and straight away
+   when it comes back into focus. Nothing is redrawn unless something actually
+   changed, and a failed request keeps what is on screen (rest() answers []
+   on failure, which here would have looked like "you own nothing"). */
+let cosSig = '';
+const COS_EVERY = 45 * 1000;
+async function restStrict(path) {
+  try {
+    const r = await fetch(SB + path, { headers: H });
+    return r.ok ? await r.json() : null;
+  } catch { return null; }
+}
+async function refreshCosmetics() {
+  const name = account?.name;
+  if (!name || document.hidden) return;
+  const who = encodeURIComponent(String(name).toLowerCase());
+  const [cat, grants, worn] = await Promise.all([
+    restStrict('/rest/v1/cosmetic_catalog?select=id,kind,value,label,price,premium_only,color&listed=eq.true&order=sort.asc'),
+    restStrict(`/rest/v1/cosmetic_grants?select=kind,value,color&player=eq.${who}`),
+    restStrict(`/rest/v1/cosmetics?select=tag,tag_color,hat,cape&player=eq.${who}`)
+  ]);
+  if (!Array.isArray(cat) || !Array.isArray(grants) || !Array.isArray(worn)) return;
+  if (account?.name !== name) return;                 // switched account while asking
+  const sig = JSON.stringify([cat, grants, worn[0] || {}]);
+  if (sig === cosSig) return;
+  const had = new Set(OWNED.map((g) => keyOf(g.kind, g.value)));
+  CATALOG = cat; OWNED = grants; WORN = worn[0] || {};
+  cosSig = sig;
+  drawCosCats();
+  drawCosmetics();
+  paintHomeCosmetic();
+  Fit.wear(cosTrying);
+  const fresh = had.size ? grants.filter((g) => !had.has(keyOf(g.kind, g.value))) : [];
+  if (fresh.length) {
+    const g = fresh[0];
+    const c = cat.find((x) => x.kind === g.kind && x.value === g.value);
+    cosNote(`New: ${c?.label || cosName(g.kind, g.value)}${fresh.length > 1 ? ` and ${fresh.length - 1} more` : ''}`, true);
+  }
+}
+setInterval(refreshCosmetics, COS_EVERY);
+document.addEventListener('visibilitychange', () => { if (!document.hidden) refreshCosmetics(); });
+
 async function loadCosmetics(name) {
   CATALOG = await rest('/rest/v1/cosmetic_catalog'
     + '?select=id,kind,value,label,price,premium_only,color'
@@ -1908,6 +1976,7 @@ async function loadCosmetics(name) {
 
   OWNED = [];
   WORN = {};
+  cosSig = '';                 // the next refresh compares against this load
 
   if (name) {
     const who = encodeURIComponent(String(name).toLowerCase());
@@ -2165,7 +2234,7 @@ function paintSlots() {
  * to run script in it.
  */
 const Fit = (() => {
-  let viewer = null, started = false, who = '', tmp = null;
+  let viewer = null, started = false, who = '', tmp = null, top = null, baseZoom = 0.6;
   const canvas = () => $('cosCanvas'), stage = () => $('cosStage');
 
   function start() {
@@ -2179,8 +2248,13 @@ const Fit = (() => {
         viewer.fov = 36; viewer.zoom = 0.6;
         viewer.animation = new skinview3d.WalkingAnimation(); viewer.animation.speed = 0.5;
         viewer.controls.enablePan = false; viewer.controls.enableZoom = false;
-        viewer.controls.minPolarAngle = viewer.controls.maxPolarAngle = Math.PI / 2;
+        // Side to side freely, and up to about 25 degrees from above - the
+        // third-person camera's angle - but barely from below (1.3.12).
+        viewer.controls.minPolarAngle = Math.PI / 2 - 0.45;
+        viewer.controls.maxPolarAngle = Math.PI / 2 + 0.06;
         viewer.playerObject.rotation.y = Math.PI - 0.55;   // start from behind: capes are on the back
+        smoothCapes(viewer);
+        baseZoom = viewer.zoom;
         viewer.autoRotateSpeed = 0.8;
         // Hidden pages measure 0x0; a zero-sized WebGL canvas errors on every
         // frame, so a resize to nothing is ignored.
@@ -2201,6 +2275,12 @@ const Fit = (() => {
         viewer.autoRotate = !viewer.autoRotate; b.setAttribute('aria-pressed', String(viewer.autoRotate));
       } else if (b.hasAttribute('data-turn')) {
         viewer.playerObject.rotation.y += Math.PI;
+      } else if (b.hasAttribute('data-close')) {
+        // Close-up on the cape: zoom in and face the back. Press again to go back.
+        const on = b.getAttribute('aria-pressed') !== 'true';
+        viewer.zoom = on ? baseZoom * 1.75 : baseZoom;
+        if (on) viewer.playerObject.rotation.y = Math.PI - 0.35;
+        b.setAttribute('aria-pressed', String(on));
       }
     });
     requestAnimationFrame(track);
@@ -2208,15 +2288,24 @@ const Fit = (() => {
     wear(cosTrying);
   }
 
-  /* Keep the tag over the head, wherever the model has turned to. */
+  /* Keep the tag ABOVE the head, wherever the model has turned to, and as big
+     as Minecraft draws it (1.3.12). It used to sit at +6.4 from the neck -
+     inside the head, so the name covered the face. skinview3d's head is 8
+     tall from its origin at the neck; Minecraft puts the name about half a
+     block over the hitbox, roughly 5 more, and the text is about 0.4 of a
+     head tall. Both are measured through the camera each frame. */
   function track() {
     const nt = $('cosNt');
     const head = viewer?.playerObject?.skin?.head;
-    if (nt && head && !canvas().hidden) {
-      if (!tmp) tmp = head.position.clone();
-      head.getWorldPosition(tmp); tmp.y += 6.4; tmp.project(viewer.camera);
+    if (nt && head && !canvas().hidden && canvas().clientWidth) {
+      if (!tmp) { tmp = head.position.clone(); top = head.position.clone(); }
       const w = canvas().clientWidth, h = canvas().clientHeight;
+      head.getWorldPosition(top); const neckY = (-top.clone().project(viewer.camera).y * 0.5 + 0.5) * h;
+      top.y += 8;                 const topY  = (-top.project(viewer.camera).y * 0.5 + 0.5) * h;
+      head.getWorldPosition(tmp); tmp.y += 13; tmp.project(viewer.camera);
       const x = (tmp.x * 0.5 + 0.5) * w, y = (-tmp.y * 0.5 + 0.5) * h;
+      nt.style.fontSize = Math.max(9, Math.min(26, Math.abs(neckY - topY) * 0.36)).toFixed(1) + 'px';
+      nt.style.visibility = tmp.z < 1 ? '' : 'hidden';
       nt.style.transform = `translate(${Math.round(x - nt.offsetWidth / 2)}px, ${Math.round(y - nt.offsetHeight)}px)`;
     }
     requestAnimationFrame(track);
@@ -2599,6 +2688,7 @@ if (cosSearch) {
    the friends list. Throttled, because focus fires on every alt-tab. */
 let lastRefresh = Date.now();
 window.addEventListener('focus', () => {
+  refreshCosmetics();
   if (Date.now() - lastRefresh < 20000) return;
   lastRefresh = Date.now();
   loadJars();

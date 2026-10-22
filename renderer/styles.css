@@ -839,10 +839,12 @@ button:focus-visible,select:focus-visible,input:focus-visible{outline:2px solid 
 .stage canvas{position:absolute;inset:0;width:100%;height:100%;cursor:grab;z-index:1}
 .stage canvas:active{cursor:grabbing}
 .flatbody{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);max-height:80%;image-rendering:pixelated}
-.nt{position:absolute;left:0;top:0;z-index:2;pointer-events:none;display:grid;justify-items:center;gap:1px;
-  background:#00000073;padding:4px 10px 5px;border-radius:3px;white-space:nowrap}
-.nt .nttag{font-family:var(--m);font-weight:700;font-size:13px;text-shadow:0 1px 0 #000}
-.nt .ntname{font-family:var(--m);font-size:12px;color:#fff;text-shadow:0 1px 0 #000}
+/* Minecraft's name plate: see-through dark, just above the head. font-size is
+   set every frame from the head's size on screen (app.js track()). */
+.nt{position:absolute;left:0;top:0;z-index:2;pointer-events:none;display:grid;justify-items:center;gap:.1em;
+  background:#00000052;padding:.15em .45em .2em;border-radius:1px;white-space:nowrap;font-size:12px}
+.nt .nttag{font-family:var(--m);font-weight:700;font-size:1.08em;text-shadow:.1em .1em 0 #0000004d}
+.nt .ntname{font-family:var(--m);font-size:1em;color:#fff;text-shadow:.1em .1em 0 #0000004d}
 .stagectl{position:absolute;right:12px;top:12px;z-index:3;display:grid;gap:6px}
 .stagectl button{width:34px;height:34px;border-radius:10px;display:grid;place-items:center;
   background:#0009;border:1px solid var(--line2);color:var(--ash)}

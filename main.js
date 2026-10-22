@@ -411,8 +411,11 @@ const DEFAULTS = {
   // any PC (schematics left in 1.3.3). Off until the player turns it on.
   cloudSync: false,
   // More than one game at once (1.3.4): each extra game gets its own copy of
-  // the profile folder, and every game must be a different account.
-  multiInstance: false,
+  // the profile folder. 1.3.12: ON by default, and the same account may run
+  // twice (AFK on one server, play on another) - a new key, so the false that
+  // every saved settings file already holds for multiInstance does not keep
+  // it off.
+  multiGames: true,
   // One set of Pink Pony settings for every version (1.3.9) - see sharedIn.
   sharedSettings: true
 };
@@ -504,7 +507,8 @@ ipcMain.handle('settings-write', async (_e, patch) => {
   next.fullscreen = !!next.fullscreen;
   next.betaUpdates = !!next.betaUpdates;
   next.cloudSync = !!next.cloudSync;
-  next.multiInstance = !!next.multiInstance;
+  next.multiGames = next.multiGames !== false;
+  delete next.multiInstance;
   next.sharedSettings = next.sharedSettings !== false;
   // A window size is both or neither, and inside what a screen can be. These
   // end up as --width/--height on the game's command line.
@@ -1107,12 +1111,83 @@ let gameRunning = false;   // ANY game - every "close the game first" check read
  * settings and config. Its server list is refreshed from the main one each
  * launch. Cloud saves and the shared server list only follow the MAIN game.
  *
- * Every game must be a different Microsoft account: the same account twice is
- * kicked by any server ("logged in from another location").
+ * 1.3.12: the same account may run more than once (AFK on one server, play on
+ * another) - only the SAME server kicks a second login. On by default.
+ *
+ * GAMES OUTLIVE THE LAUNCHER (1.3.12). Games are started detached, so closing
+ * the launcher leaves them running. That means a launcher opened again later
+ * has to find out what is already running, or it would think nothing was:
+ * it would install an update or change a profile's files under a live game.
+ * So the running games are written to running-games.json (pid and folder),
+ * and on start each one whose process is still alive is taken back on - and
+ * checked every 10 s until it closes, since there is no 'close' event for a
+ * game this launcher did not start.
  */
 const MAX_GAMES = 4;
-const games = new Map();   // gameDir -> { uuid, name }
-function refreshRunning() { gameRunning = games.size > 0; }
+const games = new Map();   // gameDir -> { uuid, name, pid?, at?, adopted? }
+const RUNNING = path.join(app.getPath('userData'), 'running-games.json');
+function refreshRunning() {
+  gameRunning = games.size > 0;
+  try {
+    const list = [...games.entries()].filter(([, g]) => g.pid)
+      .map(([dir, g]) => ({ dir, pid: g.pid, uuid: g.uuid, name: g.name, at: g.at || Date.now() }));
+    fs.writeFileSync(RUNNING, JSON.stringify(list));
+  } catch { /* only a convenience for the next start */ }
+}
+function pidAlive(pid) {
+  try { process.kill(pid, 0); return true; } catch (e) { return e && e.code === 'EPERM'; }
+}
+let adoptTimer = null;
+function adoptRunningGames() {
+  let list = [];
+  try { list = JSON.parse(fs.readFileSync(RUNNING, 'utf8')); } catch { return; }
+  const dayAgo = Date.now() - 48 * 3600 * 1000;      // a pid that old has been reused, not kept
+  for (const g of Array.isArray(list) ? list : []) {
+    if (!g || !g.dir || !Number.isInteger(g.pid) || (g.at || 0) < dayAgo) continue;
+    if (!games.has(g.dir) && pidAlive(g.pid)) {
+      games.set(g.dir, { uuid: g.uuid, name: g.name, pid: g.pid, at: g.at, adopted: true });
+    }
+  }
+  refreshRunning();
+  if (!adoptTimer && [...games.values()].some((g) => g.adopted)) {
+    adoptTimer = setInterval(() => {
+      let gone = false;
+      for (const [dir, g] of games) {
+        if (g.adopted && !pidAlive(g.pid)) { games.delete(dir); gone = true; }
+      }
+      if (gone) {
+        refreshRunning();
+        if (!gameRunning) {
+          if (updateWaiting) installUpdate(); else checkForUpdate('game-closed');
+        }
+      }
+      if (![...games.values()].some((g) => g.adopted)) { clearInterval(adoptTimer); adoptTimer = null; }
+    }, 10000);
+  }
+}
+app.whenReady().then(adoptRunningGames);
+
+/* How to start the game so it outlives the launcher: { path, detach }.
+   On Windows that needs javaw.exe - the same Java without a console window -
+   because a detached java.exe opens a black console next to the game. If no
+   javaw can be found, the game is started the old way (attached) rather than
+   with a console window: it then closes with the launcher, as it always did. */
+function detachedJava(p) {
+  if (process.platform !== 'win32') return { path: p, detach: true };
+  try {
+    if (p) {
+      if (/javaw\.exe$/i.test(p)) return { path: p, detach: true };
+      const w = p.replace(/java\.exe$/i, 'javaw.exe');
+      if (w !== p && fs.existsSync(w)) return { path: w, detach: true };
+      return { path: p, detach: false };
+    }
+    // No path = the Java on the PATH. Find its javaw.
+    const r = require('child_process').spawnSync('where', ['javaw'], { encoding: 'utf8', windowsHide: true, timeout: 5000 });
+    const first = r.status === 0 ? String(r.stdout || '').split(/\r?\n/).find((l) => l.trim()) : '';
+    if (first && fs.existsSync(first.trim())) return { path: first.trim(), detach: true };
+  } catch { /* fall through */ }
+  return { path: p, detach: false };
+}
 
 function seedInstance(baseDir, dir) {
   try {
@@ -3157,14 +3232,14 @@ async function launchOne(opts, held) {
 
   // Downloads shared, everything the player owns kept per profile.
   const baseDir = profileDir(settings, profile);
-  if (games.size && !settings.multiInstance) {
+  if (games.size && settings.multiGames === false) {
     throw new Error('The game is already running. Turn on "More than one game at once" in Settings to start another.');
   }
-  for (const g of games.values()) {
-    if (g.uuid === account.uuid) {
-      throw new Error(`${account.name} is already playing - pick a different account to start another game.`);
-    }
-  }
+  // THE SAME ACCOUNT TWICE IS ALLOWED (1.3.12). It used to be refused, on the
+  // grounds that a server kicks the second login - but only the SAME server
+  // does that. People AFK on one server and play on another with the same
+  // account, and Minecraft itself is fine with it. Each game still gets its
+  // own folder (below), so they never write over each other's files.
   if (games.size >= MAX_GAMES) throw new Error(`That's ${MAX_GAMES} games already - close one first.`);
   let gameDir = baseDir;
   for (let n = 2; games.has(gameDir) && n <= MAX_GAMES + 1; n++) gameDir = `${baseDir}-${n}`;
@@ -3295,6 +3370,7 @@ async function launchOne(opts, held) {
   linkAccount(account).catch(() => {});
 
   const startedAt = Date.now();
+  const run = detachedJava(java.path);
   let child;
   try {
     child = await launcher.launch({
@@ -3305,7 +3381,7 @@ async function launchOne(opts, held) {
       authorization: forge ? { ...account.token, user_properties: '{}' } : account.token,
       version: { number: mcVersion, type: 'release', custom },
       memory: { max: `${settings.memory}M`, min: '1024M' },
-      javaPath: java.path,     // chosen per version above - see ensureJava
+      javaPath: run.path,     // chosen per version above - see ensureJava; javaw: see detachedJava
       // minecraft-launcher-core always passes -XX:-UseAdaptiveSizePolicy, a
       // Parallel-GC flag newer JVMs have been retiring. A JVM that no longer
       // knows a flag refuses to start at all, so on the newer Javas this tells
@@ -3315,7 +3391,14 @@ async function launchOne(opts, held) {
       customArgs: jvmExtra,
       // gameDirectory is what makes a profile a profile: the game writes its
       // mods, config and saves here while root keeps the shared downloads.
-      overrides: { detached: false, gameDirectory: gameDir },
+      // DETACHED (1.3.12). Node puts every child it starts on Windows into a
+      // job object that kills them when the launcher exits - so closing the
+      // launcher (or opening it again and then closing it) closed the game
+      // too. A detached game is its own process and outlives the launcher.
+      // javaw, not java: a detached java.exe would get a console window of
+      // its own. The game's output still comes back through the pipes while
+      // the launcher is open.
+      overrides: { detached: run.detach, gameDirectory: gameDir },
       // 1.8.9 predates Quick Play: it takes --server / --port instead.
       quickPlay: joinServer ? { type: forge ? 'legacy' : 'multiplayer', identifier: joinServer } : undefined,
       // Settings > Game window, as Minecraft's own --fullscreen / --width /
@@ -3329,7 +3412,11 @@ async function launchOne(opts, held) {
   } catch (e) { games.delete(gameDir); refreshRunning(); throw e; }
   // No process means it never started, so there is nothing to wait to close.
   if (!child) { games.delete(gameDir); refreshRunning(); }
-  else held.started = true;
+  else {
+    held.started = true;
+    const g = games.get(gameDir);
+    if (g && child.pid) { g.pid = child.pid; g.at = Date.now(); refreshRunning(); }   // remembered for a reopened launcher
+  }
 
   markPlayed(profile.id);
   addEvent('play', `Launched ${mcVersion}`,
