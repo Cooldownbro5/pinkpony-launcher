@@ -1169,7 +1169,49 @@ async function loadTiles(name) {
  * on a cape: the catalogue currently has none, and "newest cape" that matches
  * nothing is an empty panel where a headband would have done.
  */
+/* A FREE PLAY EVENT TAKES THE PANEL (1.3.12). While one is on - or coming up -
+   the featured panel shows it instead: what you get, and the dates to play.
+   Playing during the window is all it takes (the server gives it on the next
+   check-in) and it is yours for good. play_events_live is a public view: item,
+   name, picture and window, nothing else. */
+function eventDay(t) {
+  // Events are set in US Central days (/playreward), so they are shown in Central too.
+  return new Date(t).toLocaleDateString(undefined, { month: 'short', day: 'numeric', timeZone: 'America/Chicago' });
+}
+async function loadEvent() {
+  const rows = await rest('/rest/v1/play_events_live?select=item,kind,value,label,starts,ends&order=starts.asc&limit=1');
+  const ev = rows[0];
+  if (!ev) return false;
+  const head = document.querySelector('#featPanel .phead h2');
+  const fa = $('featArt'), nameEl = document.querySelector('.featname'), subEl = document.querySelector('.featsub');
+  const live = Date.parse(ev.starts) <= Date.now();
+  if (head) head.textContent = live ? 'FREE RIGHT NOW' : 'FREE EVENT COMING';
+  fa.textContent = '';
+  fa.style.backgroundImage = '';
+  fa.classList.toggle('capeart', ev.kind === 'cape');
+  if (ev.kind === 'tag') {
+    fa.innerHTML = `<span class="plate"><span class="mctag">${mcHtml(ev.value)}</span></span>`;
+    fa.classList.add('tagfeat');
+  } else if (ev.kind === 'cape') {
+    fa.appendChild(capePanel(art(ev.value)));
+  } else {
+    fa.style.backgroundImage = `url('${art(ev.value)}')`;
+  }
+  if (nameEl) nameEl.textContent = ev.label || pretty(ev.value);
+  // The last moment counts as that day: an event ending 04:59 UTC on Nov 1
+  // ends on Oct 31 for the people it was made for.
+  const last = eventDay(Date.parse(ev.ends) - 1000);
+  if (subEl) subEl.textContent = live
+    ? `FREE · Play before the end of ${last} and it's yours`
+    : `FREE · Play ${eventDay(ev.starts)} – ${last} and it's yours`;
+  return true;
+}
+
 async function loadFeatured() {
+  if (await loadEvent().catch(() => false)) return;
+  const head = document.querySelector('#featPanel .phead h2');
+  if (head) head.textContent = 'FEATURED COSMETIC';
+  $('featArt')?.classList.remove('tagfeat');
   const rows = await rest('/rest/v1/cosmetic_catalog'
     + '?select=label,value,kind,price,available_until&listed=eq.true&kind=neq.tag&order=sort.asc&limit=1');
   const f = rows[0];
