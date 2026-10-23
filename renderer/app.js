@@ -26,11 +26,15 @@ document.querySelectorAll('[data-win]').forEach((b) => {
 const DISCORD = 'https://discord.gg/pinkp0ny';   // a zero, not an o
 const PATCH_NOTES = 'https://pinkponyclient.com/patchnotes.html';
 const YOUTUBE = 'https://www.youtube.com/@PinkponyClient';   // the site's link too
+const TIKTOK = 'https://www.tiktok.com/@pinkponyclient';
 document.querySelectorAll('[data-discord]').forEach((a) => {
   a.onclick = (e) => { e.preventDefault(); window.pp?.open?.(DISCORD); };
 });
 document.querySelectorAll('[data-youtube]').forEach((a) => {
   a.onclick = (e) => { e.preventDefault(); window.pp?.open?.(YOUTUBE); };
+});
+document.querySelectorAll('[data-tiktok]').forEach((a) => {
+  a.onclick = (e) => { e.preventDefault(); window.pp?.open?.(TIKTOK); };
 });
 
 /* The header icons and the hero's cog did nothing at all. Every one of them
@@ -2860,11 +2864,11 @@ function wireStrays() {
   if (patch) patch.onclick = () => window.pp?.open?.(
     PATCH_NOTES + (updateInfo.latest ? '#v' + updateInfo.latest : ''));
 
-  // X and TikTok have no accounts yet. Rather than leave links that do
-  // nothing, they are removed - they can come back the day there is something
-  // behind them. YouTube has a channel now (1.3.15), so it stays.
+  // X has no account yet. Rather than leave a link that does nothing, it is
+  // removed - it can come back the day there is something behind it.
+  // YouTube (1.3.15) and TikTok (1.3.16) have accounts, so they stay.
   document.querySelectorAll('.socials a').forEach((a) => {
-    if (a.hasAttribute('data-discord') || a.hasAttribute('data-youtube')) return;
+    if (a.hasAttribute('data-discord') || a.hasAttribute('data-youtube') || a.hasAttribute('data-tiktok')) return;
     a.remove();
   });
 }
