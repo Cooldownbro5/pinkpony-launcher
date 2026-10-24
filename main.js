@@ -425,7 +425,7 @@ const DEFAULTS = {
  * should see them again: every launcher then asks once more before the next
  * launch. The text itself lives on the website, pinkponyclient.com/terms.html.
  */
-const TERMS_VERSION = '2026-09-25';
+const TERMS_VERSION = '2026-10-24';   // auto-renew is now an option at checkout (Tebex)
 const TERMS_URL = 'https://pinkponyclient.com/terms.html';
 
 function readSettings() {
@@ -2705,8 +2705,8 @@ async function ensureClient(modsDir, mcVersion, code, beta = false) {
       file_missing: `The build for ${mcVersion} is missing from storage (${res?.file}).`,
       rate_limited: 'Too many tries - wait a minute.',
       // Only while the build function's FREE_RELEASE switch is off.
-      premium_only: 'Pink Pony needs Premium right now - $5.99 a month. Open a ticket in the Discord to get it.',
-      plus_only: 'Pink Pony needs Premium right now - $5.99 a month. Open a ticket in the Discord to get it.'
+      premium_only: 'Pink Pony needs Premium right now - $5.99 a month. Get it at pinkponyclient.com/store.html',
+      plus_only: 'Pink Pony needs Premium right now - $5.99 a month. Get it at pinkponyclient.com/store.html'
     }[res?.reason] || 'Could not get the client build.');
   }
 

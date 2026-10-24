@@ -1043,7 +1043,9 @@ async function loadUpdate() {
 }
 
 /* ---------------- premium ---------------- */
-/* One tier since 2026-09-25: Premium, $5.99 a month (was $5 until 1.2.5), never auto-charged. The
+/* One tier since 2026-09-25: Premium, $5.99 a month (was $5 until 1.2.5). Since 1.3.18 it can
+   auto-renew if the buyer ticks that at checkout. Every buy button in the launcher only opens
+   the website store - nothing is paid for inside the launcher. The
    card in the rail says what you actually have rather than always
    advertising - somebody already paying being shown "UPGRADE" is how a
    purchase stops feeling like it did anything.
@@ -1086,7 +1088,7 @@ async function loadTier() {
                      : 'Ends ' + until(ends) + ' - ' + daysLeft + ' day' + (daysLeft === 1 ? '' : 's') + ' left.';
     button.textContent = 'ADD A MONTH';
   } else {
-    body.textContent = '$5.99 a month, never auto-charged.';
+    body.textContent = '$5.99 a month. Buy it on our website.';
     button.textContent = 'GET PREMIUM';
   }
 
@@ -2766,7 +2768,7 @@ function notifications() {
     if (Number.isFinite(days) && days <= 7) {
       out.push({ icon: 'up',
                  text: days <= 0 ? 'Premium has ended' : `Premium ends in ${days} day${days === 1 ? '' : 's'}`,
-                 sub: 'Open a ticket in the Discord to add a month',
+                 sub: 'Add a month on our website',
                  go: () => window.pp?.open?.('https://pinkponyclient.com/store.html#premium') });
     }
   }
