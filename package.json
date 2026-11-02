@@ -1,6 +1,6 @@
 {
   "name": "pinkpony-launcher",
-  "version": "1.3.18",
+  "version": "1.3.19",
   "description": "Pink Pony launcher",
   "main": "main.js",
   "scripts": {

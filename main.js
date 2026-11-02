@@ -404,6 +404,8 @@ const DEFAULTS = {
   termsAccepted: '',
   // profile id -> shaders on (1.2.9). Written by main only - see 'shaders-set'.
   shaders: {},
+  // profile id -> FPS Boost off (1.3.19). Missing means ON. Written by main only - see 'boost-set'.
+  fpsBoost: {},
   // Premium: ask the build function for the beta channel (1.3.0). The
   // function decides - without Premium it is ignored and the release comes.
   betaUpdates: false,
@@ -518,6 +520,7 @@ ipcMain.handle('settings-write', async (_e, patch) => {
   // Only main writes this; whatever the renderer sent is put back.
   next.lastPlayed = current.lastPlayed && typeof current.lastPlayed === 'object' ? current.lastPlayed : {};
   next.shaders = current.shaders && typeof current.shaders === 'object' ? current.shaders : {};
+  next.fpsBoost = current.fpsBoost && typeof current.fpsBoost === 'object' ? current.fpsBoost : {};
   for (const k of ['javaPath', 'gameDir', 'code']) next[k] = String(next[k] || '').trim();
   // Only ever the current version or nothing - the renderer cannot claim
   // agreement to some other text.
@@ -1627,7 +1630,9 @@ ipcMain.handle('mods-scan', async () => {
   }
   try { files = fs.readdirSync(dir); } catch { return []; }
 
-  const shaderJars = new Set(Object.values(readShaderManifest(dir).files));
+  const extraFiles = readShaderManifest(dir).files;
+  const shaderJars = new Set(Object.values(extraFiles));
+  const irisJar = extraFiles.iris || '';
   return files
     .filter((f) => /\.jar(\.disabled)?$/i.test(f))
     .map((f) => {
@@ -1637,6 +1642,7 @@ ipcMain.handle('mods-scan', async () => {
       return {
         ...info,
         shader,
+        boost: shader && f.replace(/\.disabled$/i, '') !== irisJar,   // FPS Boost's (Sodium may be both)
         enabled: !lower.endsWith('.disabled'),
         // Ours and its dependency are marked so the UI can say why removing
         // them is a bad idea, rather than letting somebody delete the client
@@ -2245,7 +2251,10 @@ async function mrVersion(project, mcVersion, loaders) {
   if (!Array.isArray(list) || !list.length) return null;
   const v = list.find((x) => x.version_type === 'release') || list[0];
   const file = v.files?.find((f) => f.primary) || v.files?.[0];
-  return file ? { version: v.version_number, url: file.url, filename: file.filename } : null;
+  const needs = (Array.isArray(v.dependencies) ? v.dependencies : [])
+    .filter((d) => d && d.dependency_type === 'required' && d.project_id)
+    .map((d) => String(d.project_id));
+  return file ? { version: v.version_number, url: file.url, filename: file.filename, needs } : null;
 }
 
 function enableJar(modsDir, f) {
@@ -2272,38 +2281,96 @@ function theirModIds(modsDir, ours) {
   return ids;
 }
 
-/* Returns '' when shaders are ready (or off), or a sentence saying why not. */
-async function ensureShaders(modsDir, mcVersion, on) {
-  const m = readShaderManifest(modsDir);
-  if (!on) {
-    for (const f of Object.values(m.files)) disableJar(modsDir, f);
-    return '';
-  }
-  const theirs = theirModIds(modsDir, new Set(Object.values(m.files)));
-  say(62, 'Getting shaders (Sodium + Iris)…');
+/*
+ * ---- FPS BOOST (1.3.19) ------------------------------------------------------
+ *
+ * On by default for every Fabric profile: Sodium (a much faster chunk
+ * renderer - most of where Lunar's FPS comes from), FerriteCore (less memory,
+ * so fewer GC stutters) and Entity Culling (doesn't draw mobs, chests and
+ * signs hidden behind walls). Fetched from Modrinth like Fabric API, kept
+ * current, listed in the same manifest as the shader jars.
+ *
+ * Lithium is left out on purpose: it redirects the same call in Entity.collide
+ * as Pink Pony's item-pile fix, and two redirects on one call is a crash.
+ * (The client skips its own one when somebody installs Lithium themselves.)
+ *
+ * The same rules as shaders: the player's own copy of any of these is never
+ * touched, off renames to .jar.disabled, a mod that isn't out for this version
+ * yet is simply skipped, and nothing here ever stops the game from starting.
+ */
+const BOOST_MODS = [
+  { slug: 'sodium', id: 'sodium', name: 'Sodium' },
+  { slug: 'ferrite-core', id: 'ferritecore', name: 'FerriteCore' },
+  { slug: 'entityculling', id: 'entityculling', name: 'Entity Culling' }
+];
+const MOD_NAMES = { sodium: 'Sodium', iris: 'Iris', 'ferrite-core': 'FerriteCore', entityculling: 'Entity Culling' };
+const MOD_IDS = { sodium: 'sodium', iris: 'iris', 'ferrite-core': 'ferritecore', entityculling: 'entityculling' };
+// Modrinth project ids a boost or shader jar may require: Fabric API and Sodium.
+// One that needs anything else is skipped rather than launched into a crash.
+const DEPS_WE_HAVE = new Set(['P7dR8mSH', 'AANobbMI']);
 
-  // Both or neither: Iris without Sodium will not load, and Sodium alone is
-  // not what anybody switched on.
-  const want = {};
-  for (const slug of SHADER_MODS) {
-    if (theirs.has(slug)) continue;
+function boostOn(s, p) { return !isForgeLine(p.mc) && s.fpsBoost?.[p.id] !== false; }
+
+/*
+ * Make the mods folder hold exactly the extras that are switched on.
+ * Returns '' when all is well, or a sentence for the activity list.
+ */
+async function ensureExtras(modsDir, mcVersion, boost, shaders) {
+  const m = readShaderManifest(modsDir);
+  const want = new Map();
+  if (boost) for (const b of BOOST_MODS) want.set(b.slug, b.id);
+  if (shaders) { want.set('sodium', 'sodium'); want.set('iris', 'iris'); }
+
+  // Anything of ours that is no longer wanted: off, by rename.
+  for (const [slug, f] of Object.entries(m.files)) if (!want.has(slug)) disableJar(modsDir, f);
+  if (!want.size) return '';
+
+  const theirs = theirModIds(modsDir, new Set(Object.values(m.files)));
+  say(62, shaders ? 'Getting shaders and FPS Boost…' : 'Getting FPS Boost…');
+  const found = {};
+  for (const [slug, id] of want) {
+    if (theirs.has(id)) continue;
     let v = null;
     try { v = await mrVersion(slug, mcVersion, ['fabric']); } catch { v = null; }
-    want[slug] = v;
+    if (v && v.needs.some((d) => !DEPS_WE_HAVE.has(d))) v = null;
+    found[slug] = v;
   }
-  const missing = SHADER_MODS.filter((slug) => !theirs.has(slug) && !want[slug] && !m.files[slug]);
-  if (missing.length) {
-    for (const f of Object.values(m.files)) disableJar(modsDir, f);
-    return `Shaders are not out for ${mcVersion} yet (no ${missing.join(' / ')} build) - playing without them.`;
+  const notes = [];
+  const haveJar = (slug) => !!m.files[slug] && (fs.existsSync(path.join(modsDir, m.files[slug]))
+                                               || fs.existsSync(path.join(modsDir, m.files[slug] + '.disabled')));
+  // Shaders are both or neither: Iris will not load without Sodium.
+  if (shaders) {
+    const ok = (slug) => theirs.has(MOD_IDS[slug]) || found[slug] || haveJar(slug);
+    if (!ok('sodium') || !ok('iris')) {
+      const missing = ['sodium', 'iris'].filter((x) => !ok(x)).map((x) => MOD_NAMES[x]);
+      notes.push(`Shaders are not out for ${mcVersion} yet (no ${missing.join(' / ')} build) - playing without them.`);
+      want.delete('iris');
+      if (m.files.iris) disableJar(modsDir, m.files.iris);
+      if (!boost) { want.delete('sodium'); if (m.files.sodium) disableJar(modsDir, m.files.sodium); }
+    }
   }
 
-  for (const slug of SHADER_MODS) {
-    if (theirs.has(slug)) continue;
+  let sodiumReady = theirs.has('sodium');
+  for (const [slug, id] of want) {
+    if (theirs.has(id)) continue;
+    if (slug === 'iris' && !sodiumReady) {           // Sodium did not make it this time
+      if (m.files.iris) disableJar(modsDir, m.files.iris);
+      continue;
+    }
     const have = m.files[slug];
-    const v = want[slug];
-    if (!v || v.filename === have) { enableJar(modsDir, have); continue; }   // offline: keep what we have
-    say(63, `Getting ${slug === 'iris' ? 'Iris' : 'Sodium'} ${v.version}…`);
-    await download(v.url, path.join(modsDir, v.filename));
+    const v = found[slug];
+    if (!v || v.filename === have) {                  // offline, not out yet, or already current
+      if (have && haveJar(slug)) { enableJar(modsDir, have); if (slug === 'sodium') sodiumReady = true; }
+      continue;
+    }
+    say(63, `Getting ${MOD_NAMES[slug] || slug} ${v.version}…`);
+    try {
+      await download(v.url, path.join(modsDir, v.filename));
+    } catch (e) {
+      if (have && haveJar(slug)) { enableJar(modsDir, have); if (slug === 'sodium') sodiumReady = true; }
+      notes.push(`Could not get ${MOD_NAMES[slug] || slug} (${e?.message || e}).`);
+      continue;
+    }
     if (have && have !== v.filename) {
       for (const old of [have, have + '.disabled']) {
         try { fs.unlinkSync(path.join(modsDir, old)); } catch { /* already gone */ }
@@ -2311,8 +2378,9 @@ async function ensureShaders(modsDir, mcVersion, on) {
     }
     m.files[slug] = v.filename;
     writeShaderManifest(modsDir, m);
+    if (slug === 'sodium') sodiumReady = true;
   }
-  return '';
+  return notes.join(' ');
 }
 
 /* ---- the shader packs, and Iris's own settings file ---- */
@@ -2390,7 +2458,39 @@ ipcMain.handle('shaders-set', async (_e, on) => {
   fs.renameSync(SETTINGS + '.tmp', SETTINGS);
   // Off takes effect now (a rename); on downloads at the next PLAY.
   if (!on && !gameRunning) {
-    try { await ensureShaders(path.join(profileDir(next, p), 'mods'), p.mc, false); } catch { /* next launch does it */ }
+    try { await ensureExtras(path.join(profileDir(next, p), 'mods'), p.mc, boostOn(next, p), false); } catch { /* next launch does it */ }
+  }
+  return !!on;
+});
+
+ipcMain.handle('boost-get', async () => {
+  const s = readSettings();
+  const p = activeProfile(s);
+  const modsDir = path.join(profileDir(s, p), 'mods');
+  const forge = isForgeLine(p.mc);
+  const ours = readShaderManifest(modsDir).files;
+  let theirs = new Set();
+  try { theirs = theirModIds(modsDir, new Set(Object.values(ours))); } catch { /* no folder yet */ }
+  return {
+    on: !forge && s.fpsBoost?.[p.id] !== false,
+    mc: p.mc,
+    forge,
+    mods: BOOST_MODS.map((b) => ({ name: b.name, installed: !!ours[b.slug] || theirs.has(b.id), yours: theirs.has(b.id) })),
+    running: gameRunning
+  };
+});
+
+ipcMain.handle('boost-set', async (_e, on) => {
+  const s = readSettings();
+  const p = activeProfile(s);
+  const fb = { ...(s.fpsBoost || {}) };
+  if (on) delete fb[p.id]; else fb[p.id] = false;
+  const next = { ...s, fpsBoost: fb };
+  fs.writeFileSync(SETTINGS + '.tmp', JSON.stringify(next, null, 2));
+  fs.renameSync(SETTINGS + '.tmp', SETTINGS);
+  // Off takes effect now (a rename) - Sodium stays if Shaders needs it; on downloads at the next PLAY.
+  if (!on && !gameRunning && !isForgeLine(p.mc)) {
+    try { await ensureExtras(path.join(profileDir(next, p), 'mods'), p.mc, false, !!next.shaders?.[p.id]); } catch { /* next launch does it */ }
   }
   return !!on;
 });
@@ -3282,10 +3382,11 @@ async function launchOne(opts, held) {
   if (!forge) await ensureFabricApi(modsDir, mcVersion);
   // Shaders are Sodium + Iris, which are Fabric mods - not on 1.8.9.
   const shadersOn = !forge && !!settings.shaders?.[profile.id];
+  const fpsBoostOn = !forge && settings.fpsBoost?.[profile.id] !== false;     // on unless turned off (1.3.19)
   let shaderNote = '';
   if (!forge) {
-    try { shaderNote = await ensureShaders(modsDir, mcVersion, shadersOn); }
-    catch (e) { shaderNote = `Could not get shaders (${e?.message || e}) - playing without them.`; }
+    try { shaderNote = await ensureExtras(modsDir, mcVersion, fpsBoostOn, shadersOn); }
+    catch (e) { shaderNote = `Could not get FPS Boost / shaders (${e?.message || e}) - playing without them.`; }
   }
   if (shaderNote) addEvent('shaders', shaderNote, profile.name);
   const java = await ensureJava(root, mcVersion, settings.javaPath);

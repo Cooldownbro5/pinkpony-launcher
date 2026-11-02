@@ -355,6 +355,7 @@ async function loadJars() {
   };
   group('INSTALLED BY PINK PONY', managed);
   group('YOUR MODS', theirs);
+  loadBoost();
   loadShaders();
   if (!theirs.length) {
     box.insertAdjacentHTML('beforeend',
@@ -394,7 +395,9 @@ function jarRow(j) {
   toggle.setAttribute('aria-label', j.name);
   toggle.title = j.enabled ? 'Turn off' : 'Turn on';
   toggle.onclick = async () => {
-    if (j.shader && j.enabled
+    if (j.boost && j.enabled
+        && !confirm(`Turn off ${j.name}? It's part of FPS Boost - the FPS Boost switch above turns it off properly.`)) return;
+    if (j.shader && !j.boost && j.enabled
         && !confirm(`Turn off ${j.name}? Shaders need it - the Shaders switch above turns them off properly.`)) return;
     if (j.managed && !j.shader && j.enabled
         && !confirm(`Turn off ${j.name}? Pink Pony will not load without it.`)) return;
@@ -420,6 +423,39 @@ function jarRow(j) {
   };
   row.appendChild(del);
   return row;
+}
+
+/* ---------------- FPS Boost (1.3.19) ----------------
+   One switch per profile, on unless turned off. Sodium, FerriteCore and
+   Entity Culling come from Modrinth on the next PLAY (main.js ensureExtras). */
+async function loadBoost() {
+  const panel = $('boostPanel');
+  if (!panel || !window.pp?.boost) return;
+  const st = await window.pp.boost().catch(() => null);
+  if (!st || st.forge) { panel.hidden = true; return; }
+  panel.hidden = false;
+  $('boostFor').textContent = st.mc || '';
+  const sw = $('boostSwitch');
+  sw.setAttribute('aria-pressed', String(st.on));
+  sw.title = st.on ? 'Turn FPS Boost off' : 'Turn FPS Boost on';
+  const all = st.mods.every((x) => x.installed);
+  const yours = st.mods.filter((x) => x.yours).map((x) => x.name);
+  $('boostHint').textContent = !st.on
+    ? 'Off. Turn on for a lot more FPS: Sodium, FerriteCore and Entity Culling.'
+    : !all
+      ? 'On - Sodium, FerriteCore and Entity Culling install when you press PLAY.'
+      : 'On: Sodium, FerriteCore and Entity Culling.' + (yours.length ? ` Using your own ${yours.join(', ')}.` : '');
+}
+
+function wireBoost() {
+  const sw = $('boostSwitch');
+  if (!sw) return;
+  sw.onclick = async () => {
+    const on = sw.getAttribute('aria-pressed') !== 'true';
+    await window.pp.boostSet(on).catch(() => {});
+    loadBoost();
+    loadJars();
+  };
 }
 
 /* ---------------- shaders (1.2.9) ----------------
@@ -2900,6 +2936,7 @@ loadVersions();
 loadUpdate();
 loadJars();
 wireJars();
+wireBoost();
 wireShaders();
 loadTier();
 wireSettings();
