@@ -404,8 +404,6 @@ const DEFAULTS = {
   termsAccepted: '',
   // profile id -> shaders on (1.2.9). Written by main only - see 'shaders-set'.
   shaders: {},
-  // profile id -> FPS Boost off (1.3.19). Missing means ON. Written by main only - see 'boost-set'.
-  fpsBoost: {},
   // Premium: ask the build function for the beta channel (1.3.0). The
   // function decides - without Premium it is ignored and the release comes.
   betaUpdates: false,
@@ -520,7 +518,6 @@ ipcMain.handle('settings-write', async (_e, patch) => {
   // Only main writes this; whatever the renderer sent is put back.
   next.lastPlayed = current.lastPlayed && typeof current.lastPlayed === 'object' ? current.lastPlayed : {};
   next.shaders = current.shaders && typeof current.shaders === 'object' ? current.shaders : {};
-  next.fpsBoost = current.fpsBoost && typeof current.fpsBoost === 'object' ? current.fpsBoost : {};
   for (const k of ['javaPath', 'gameDir', 'code']) next[k] = String(next[k] || '').trim();
   // Only ever the current version or nothing - the renderer cannot claim
   // agreement to some other text.
@@ -1633,6 +1630,14 @@ ipcMain.handle('mods-scan', async () => {
   const extraFiles = readShaderManifest(dir).files;
   const shaderJars = new Set(Object.values(extraFiles));
   const irisJar = extraFiles.iris || '';
+  // FPS Boost is always on (1.3.20): one of its jars switched off is switched back on.
+  for (const f of files.filter((x) => /\.jar\.disabled$/i.test(x))) {
+    const on = f.replace(/\.disabled$/i, '');
+    if (!shaderJars.has(on) || on === irisJar) continue;
+    try { if (!fs.existsSync(path.join(dir, on))) fs.renameSync(path.join(dir, f), path.join(dir, on)); }
+    catch { /* in use - the next launch does it */ }
+  }
+  try { files = fs.readdirSync(dir); } catch { return []; }
   return files
     .filter((f) => /\.jar(\.disabled)?$/i.test(f))
     .map((f) => {
@@ -1648,7 +1653,7 @@ ipcMain.handle('mods-scan', async () => {
         // them is a bad idea, rather than letting somebody delete the client
         // and wonder where it went.
         managed: lower.startsWith('pinkpony') || lower.startsWith('fabric-api') || shader,
-        core: isCoreJar(f)                 // always on: no switch, no bin
+        core: isCoreJar(f) || (shader && f.replace(/\.disabled$/i, '') !== irisJar)   // always on: no switch, no bin
       };
     })
     .sort((a, b) => Number(b.managed) - Number(a.managed) || a.name.localeCompare(b.name));
@@ -2284,7 +2289,7 @@ function theirModIds(modsDir, ours) {
 /*
  * ---- FPS BOOST (1.3.19) ------------------------------------------------------
  *
- * On by default for every Fabric profile: Sodium (a much faster chunk
+ * ALWAYS ON for every Fabric profile (1.3.20 - 1.3.19 had a switch): Sodium (a much faster chunk
  * renderer - most of where Lunar's FPS comes from), FerriteCore (less memory,
  * so fewer GC stutters) and Entity Culling (doesn't draw mobs, chests and
  * signs hidden behind walls). Fetched from Modrinth like Fabric API, kept
@@ -2295,8 +2300,9 @@ function theirModIds(modsDir, ours) {
  * (The client skips its own one when somebody installs Lithium themselves.)
  *
  * The same rules as shaders: the player's own copy of any of these is never
- * touched, off renames to .jar.disabled, a mod that isn't out for this version
- * yet is simply skipped, and nothing here ever stops the game from starting.
+ * touched, a mod that isn't out for this version yet is simply skipped, and
+ * nothing here ever stops the game from starting. (A settings.fpsBoost left
+ * by 1.3.19's switch is ignored.)
  */
 const BOOST_MODS = [
   { slug: 'sodium', id: 'sodium', name: 'Sodium' },
@@ -2309,7 +2315,7 @@ const MOD_IDS = { sodium: 'sodium', iris: 'iris', 'ferrite-core': 'ferritecore',
 // One that needs anything else is skipped rather than launched into a crash.
 const DEPS_WE_HAVE = new Set(['P7dR8mSH', 'AANobbMI']);
 
-function boostOn(s, p) { return !isForgeLine(p.mc) && s.fpsBoost?.[p.id] !== false; }
+function boostOn(_s, p) { return !isForgeLine(p.mc); }
 
 /*
  * Make the mods folder hold exactly the extras that are switched on.
@@ -2459,38 +2465,6 @@ ipcMain.handle('shaders-set', async (_e, on) => {
   // Off takes effect now (a rename); on downloads at the next PLAY.
   if (!on && !gameRunning) {
     try { await ensureExtras(path.join(profileDir(next, p), 'mods'), p.mc, boostOn(next, p), false); } catch { /* next launch does it */ }
-  }
-  return !!on;
-});
-
-ipcMain.handle('boost-get', async () => {
-  const s = readSettings();
-  const p = activeProfile(s);
-  const modsDir = path.join(profileDir(s, p), 'mods');
-  const forge = isForgeLine(p.mc);
-  const ours = readShaderManifest(modsDir).files;
-  let theirs = new Set();
-  try { theirs = theirModIds(modsDir, new Set(Object.values(ours))); } catch { /* no folder yet */ }
-  return {
-    on: !forge && s.fpsBoost?.[p.id] !== false,
-    mc: p.mc,
-    forge,
-    mods: BOOST_MODS.map((b) => ({ name: b.name, installed: !!ours[b.slug] || theirs.has(b.id), yours: theirs.has(b.id) })),
-    running: gameRunning
-  };
-});
-
-ipcMain.handle('boost-set', async (_e, on) => {
-  const s = readSettings();
-  const p = activeProfile(s);
-  const fb = { ...(s.fpsBoost || {}) };
-  if (on) delete fb[p.id]; else fb[p.id] = false;
-  const next = { ...s, fpsBoost: fb };
-  fs.writeFileSync(SETTINGS + '.tmp', JSON.stringify(next, null, 2));
-  fs.renameSync(SETTINGS + '.tmp', SETTINGS);
-  // Off takes effect now (a rename) - Sodium stays if Shaders needs it; on downloads at the next PLAY.
-  if (!on && !gameRunning && !isForgeLine(p.mc)) {
-    try { await ensureExtras(path.join(profileDir(next, p), 'mods'), p.mc, false, !!next.shaders?.[p.id]); } catch { /* next launch does it */ }
   }
   return !!on;
 });
@@ -3382,7 +3356,7 @@ async function launchOne(opts, held) {
   if (!forge) await ensureFabricApi(modsDir, mcVersion);
   // Shaders are Sodium + Iris, which are Fabric mods - not on 1.8.9.
   const shadersOn = !forge && !!settings.shaders?.[profile.id];
-  const fpsBoostOn = !forge && settings.fpsBoost?.[profile.id] !== false;     // on unless turned off (1.3.19)
+  const fpsBoostOn = !forge;                     // always on (1.3.20)
   let shaderNote = '';
   if (!forge) {
     try { shaderNote = await ensureExtras(modsDir, mcVersion, fpsBoostOn, shadersOn); }

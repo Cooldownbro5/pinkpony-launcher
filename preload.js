@@ -41,9 +41,6 @@ contextBridge.exposeInMainWorld('pp', {
   modsFolder:   () => ipcRenderer.invoke('mods-folder'),
   // Shaders (1.2.9): Sodium + Iris per profile, and packs from a fixed list -
   // the renderer names a pack by slug, it never sends a URL or a path.
-  // FPS Boost (1.3.19): Sodium, FerriteCore and Entity Culling, on by default.
-  boost:        () => ipcRenderer.invoke('boost-get'),
-  boostSet:     (on) => ipcRenderer.invoke('boost-set', !!on),
   shaders:      () => ipcRenderer.invoke('shaders-get'),
   shadersSet:   (on) => ipcRenderer.invoke('shaders-set', !!on),
   shadersFolder:() => ipcRenderer.invoke('shaders-folder'),

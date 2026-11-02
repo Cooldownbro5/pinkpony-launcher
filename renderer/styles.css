@@ -821,7 +821,6 @@ button:focus-visible,select:focus-visible,input:focus-visible{outline:2px solid 
 
 /* ---------------- shaders (1.2.9) ---------------- */
 .shaderpanel{margin-bottom:14px}
-.boostpanel{margin-bottom:14px}
 .shaderpanel.off .packgrid{opacity:.45}
 .packgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(210px,1fr));gap:10px}
 .pack{background:var(--panel2);border:1px solid var(--line);border-radius:14px;padding:12px 12px 11px;
