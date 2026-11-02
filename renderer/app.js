@@ -332,19 +332,23 @@ async function loadJars() {
   if (!box) return;
   box.textContent = '';
 
-  const on = jars.filter((j) => j.enabled).length;
+  // ALWAYS-ON JARS AREN'T LISTED (1.3.21): Pink Pony, Fabric API and FPS Boost
+  // have no switch and no bin, so a row for each was just noise.
+  const shown = jars.filter((j) => !j.core);
+  const on = shown.filter((j) => j.enabled).length;
   const count = $('modsCount');
-  if (count) count.textContent = jars.length ? `${jars.length} installed · ${on} on` : '';
+  if (count) count.textContent = shown.length ? `${shown.length} installed · ${on} on` : '';
 
-  if (!jars.length) {
-    box.innerHTML = '<div class="modempty small"><h3>No mods yet</h3>'
-      + '<p>Pink Pony and Fabric API install themselves the first time you press PLAY. '
+  if (!shown.length) {
+    box.innerHTML = '<div class="modempty small"><h3>No mods of your own yet</h3>'
+      + '<p>Pink Pony, Fabric API and FPS Boost are always on, so they aren\'t listed here. '
       + 'Drop any other mod here.</p></div>';
+    loadShaders();
     return;
   }
 
   // Pink Pony and what it needs first, then everything the player added.
-  const managed = jars.filter((j) => j.managed), theirs = jars.filter((j) => !j.managed);
+  const managed = shown.filter((j) => j.managed), theirs = shown.filter((j) => !j.managed);
   const group = (label, list) => {
     if (!list.length) return;
     const h = document.createElement('p');
